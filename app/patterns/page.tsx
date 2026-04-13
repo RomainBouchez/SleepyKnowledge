@@ -62,10 +62,14 @@ export default function PatternsPage() {
   const logMap    = new Map(logs.map(l => [l.date, l]));
 
   // Chart data
-  const scoreData   = displayed.map(r => ({ x: shortDate(r.date), y: r.sleep_score }));
-  const durData     = displayed.map(r => ({ x: shortDate(r.date), y: Math.round(r.duration_min / 60 * 10) / 10 }));
-  const deepData    = displayed.map(r => ({ x: shortDate(r.date), y: pct(r.deep_sleep_min, r.duration_min) }));
-  const remData     = displayed.map(r => ({ x: shortDate(r.date), y: pct(r.rem_sleep_min,  r.duration_min) }));
+  const scoreData    = displayed.map(r => ({ x: shortDate(r.date), y: r.sleep_score }));
+  const durData      = displayed.map(r => ({ x: shortDate(r.date), y: Math.round(r.duration_min / 60 * 10) / 10 }));
+  // Combined deep+REM in a single array (required by Recharts LineChart)
+  const sleepPhaseData = displayed.map(r => ({
+    x:    shortDate(r.date),
+    deep: pct(r.deep_sleep_min, r.duration_min),
+    rem:  pct(r.rem_sleep_min,  r.duration_min),
+  }));
 
   // Correlation datasets
   function buildCorr(
@@ -156,13 +160,13 @@ export default function PatternsPage() {
       {/* ── Deep + REM ─────────────────────────────────────────────── */}
       <ChartCard title="Deep sleep & REM (%)">
         <ResponsiveContainer width="100%" height={160}>
-          <LineChart margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+          <LineChart data={sleepPhaseData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-            <XAxis dataKey="x" type="category" allowDuplicatedCategory={false} tick={AXIS_STYLE} data={deepData} interval="preserveStartEnd" />
+            <XAxis dataKey="x" tick={AXIS_STYLE} interval="preserveStartEnd" />
             <YAxis tick={AXIS_STYLE} />
             <Tooltip {...TOOLTIP_STYLE} />
-            <Line data={deepData} type="monotone" dataKey="y" stroke="#3B82F6" strokeWidth={2} dot={false} name="Deep" />
-            <Line data={remData}  type="monotone" dataKey="y" stroke="#8B5CF6" strokeWidth={2} dot={false} name="REM" />
+            <Line type="monotone" dataKey="deep" stroke="#3B82F6" strokeWidth={2} dot={false} name="Deep" />
+            <Line type="monotone" dataKey="rem"  stroke="#8B5CF6" strokeWidth={2} dot={false} name="REM" />
           </LineChart>
         </ResponsiveContainer>
         <div className="flex gap-4 mt-1">
