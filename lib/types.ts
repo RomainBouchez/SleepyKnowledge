@@ -1,4 +1,4 @@
-// ── Sleep data (imported from Mi Fitness CSV) ─────────────────────────────────
+// ── Sleep data (imported from Mi Fitness CSV / VPS sync) ──────────────────────
 export interface SleepRecord {
   id?: number;
   date: string;           // YYYY-MM-DD
@@ -22,29 +22,29 @@ export type MealHeaviness = 'léger' | 'normal' | 'lourd';
 
 export interface LifestyleLog {
   id?: number;
-  date: string;             // YYYY-MM-DD
+  date: string;
   caffeine_mg: number;
-  caffeine_last_hour: string; // HH:MM
-  sport_type: string;         // e.g. "running", "weights", "none"
+  caffeine_last_hour: string;
+  sport_type: string;
   sport_intensity: number;    // 1–10
-  sport_hour: string;         // HH:MM
-  screen_last_hour: string;   // HH:MM
-  meal_hour: string;          // HH:MM
+  sport_hour: string;
+  screen_last_hour: string;
+  meal_hour: string;
   meal_heaviness: MealHeaviness;
   weed: boolean;
-  weed_hour: string;          // HH:MM (empty string if weed=false)
+  weed_hour: string;
   notes: string;
 }
 
-// ── AI-generated insights cached in SQLite ────────────────────────────────────
+// ── AI-generated insights (cached in IndexedDB) ───────────────────────────────
 export type InsightType = 'morning_score' | 'weekly_report';
 
 export interface AiInsight {
   id?: number;
-  date: string;          // YYYY-MM-DD  (week start for reports)
+  date: string;
   type: InsightType;
   content: string;
-  generated_at: string;  // ISO timestamp
+  generated_at: string;
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -54,24 +54,23 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
-  timestamp: number;     // unix ms
+  timestamp: number;
 }
 
 // ── Sync payload from n8n/VPS ─────────────────────────────────────────────────
 export interface SyncPayload {
   sleep: Omit<SleepRecord, 'id' | 'imported_at'>[];
-  generatedAt: string;  // ISO timestamp from VPS
+  generatedAt: string;
 }
 
-// ── Chart data point ──────────────────────────────────────────────────────────
+// ── Chart helpers ─────────────────────────────────────────────────────────────
 export interface DataPoint {
-  x: string | number;   // date label or index
+  x: string | number;
   y: number;
 }
 
-// ── Correlation entry (lifestyle factor vs sleep metric) ─────────────────────
 export interface CorrelationPoint {
-  x: number;  // lifestyle value (e.g. caffeine_mg)
-  y: number;  // sleep metric (e.g. deep_sleep_min)
+  x: number;
+  y: number;
   date: string;
 }
