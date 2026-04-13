@@ -239,6 +239,32 @@ def parse_activity_csv(csv_text: str) -> dict[str, int]:
             by_date[date] = by_date.get(date, 0) + steps
     return by_date
 
+# ── latest.json (served by serve.py) ─────────────────────────────────────────
+
+LATEST_FILE = DATA_DIR / "latest.json"
+
+def update_latest_json(new_records: list[dict]):
+    """Merge new_records into latest.json, deduplicating by date."""
+    existing: list[dict] = []
+    if LATEST_FILE.exists():
+        try:
+            with open(LATEST_FILE) as f:
+                data = json.load(f)
+            existing = data.get("sleep", [])
+        except Exception as e:
+            log.warning(f"Could not read latest.json: {e}")
+
+    by_date: dict[str, dict] = {r["date"]: r for r in existing}
+    for r in new_records:
+        by_date[r["date"]] = r  # new data overwrites old for same date
+
+    merged = sorted(by_date.values(), key=lambda r: r["date"])
+    payload = {"sleep": merged, "generatedAt": datetime.utcnow().isoformat() + "Z"}
+
+    with open(LATEST_FILE, "w") as f:
+        json.dump(payload, f)
+    log.info(f"Updated latest.json — {len(merged)} total records")
+
 # ── Post to n8n ───────────────────────────────────────────────────────────────
 
 def post_to_n8n(sleep_records: list[dict]) -> bool:
@@ -348,17 +374,18 @@ async def main():
         for r in sleep_records:
             r["steps"] = steps_by_date.get(r["date"], 0)
 
-    # Save local backup
+    # Save daily backup
     out_file = DATA_DIR / f"sleep_{EXPORT_DATE}.json"
     with open(out_file, "w") as f:
         json.dump({"sleep": sleep_records, "generatedAt": datetime.utcnow().isoformat() + "Z"}, f)
     log.info(f"Saved backup to {out_file}")
 
-    # ── Post to n8n ───────────────────────────────────────────────────────────
-    if sleep_records:
+    # ── Update latest.json (accumulate all records, dedup by date) ────────────
+    update_latest_json(sleep_records)
+
+    # ── Post to n8n (optional) ────────────────────────────────────────────────
+    if N8N_URL and sleep_records:
         post_to_n8n(sleep_records)
-    else:
-        log.warning("No records to post")
 
     log.info("Done.")
 
