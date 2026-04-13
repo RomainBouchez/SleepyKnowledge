@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="110" fill="#080D1A"/>
+  <!-- Electric blue glow ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#3B82F6" stroke-width="8" opacity="0.3"/>
+  <!-- Moon shape -->
+  <path d="M 310 160 A 110 110 0 1 0 310 352 A 80 80 0 1 1 310 160 Z" fill="#3B82F6"/>
+  <!-- Stars -->
+  <circle cx="340" cy="175" r="5" fill="#F1F5F9" opacity="0.9"/>
+  <circle cx="365" cy="210" r="3" fill="#F1F5F9" opacity="0.7"/>
+  <circle cx="348" cy="240" r="4" fill="#8B5CF6" opacity="0.9"/>
+</svg>
