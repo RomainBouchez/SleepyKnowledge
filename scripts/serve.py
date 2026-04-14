@@ -45,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(503)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(b'{"error":"No data yet — run xiaomi_export.py first"}')
+            self.wfile.write(b'{"error":"No data yet - run xiaomi_export.py first"}')
             return
 
         data = LATEST.read_bytes()

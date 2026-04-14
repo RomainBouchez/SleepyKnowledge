@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI, type Content } from '@google/generative-ai';
 import { NextRequest } from 'next/server';
 import type { ChatMessage } from '@/lib/types';
 
@@ -8,50 +8,38 @@ Cite des exemples concrets de son historique quand c'est pertinent (dates, chiff
 Sois concis mais complet. Utilise des emojis avec modération.`;
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return new Response('CLAUDE_API_KEY not configured', { status: 500 });
+    return new Response('GEMINI_API_KEY not configured', { status: 500 });
   }
 
   const { messages, context }: { messages: ChatMessage[]; context: string } = await req.json();
 
-  const anthropic = new Anthropic({ apiKey });
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction: SYSTEM,
+  });
 
-  // History without the last user message (we'll embed it with context)
-  const history: Anthropic.MessageParam[] = messages.slice(0, -1).map(m => ({
-    role: m.role,
-    content: m.content,
+  // Convert history (all but last message), 'assistant' → 'model'
+  const history: Content[] = messages.slice(0, -1).map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
   }));
 
   const lastUserContent = messages[messages.length - 1]?.content ?? '';
-
-  const contextTurn: Anthropic.MessageParam = {
-    role: 'user',
-    content: [
-      { type: 'text', text: context, cache_control: { type: 'ephemeral' } } as never,
-      { type: 'text', text: `Question : ${lastUserContent}` },
-    ],
-  };
+  const userMessage = `${context}\n\nQuestion : ${lastUserContent}`;
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const apiStream = anthropic.messages.stream({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1024,
-          system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } } as never],
-          messages: [...history, contextTurn],
-        });
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessageStream(userMessage);
 
-        for await (const event of apiStream) {
-          if (
-            event.type === 'content_block_delta' &&
-            event.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(encoder.encode(event.delta.text));
-          }
+        for await (const chunk of result.stream) {
+          controller.enqueue(encoder.encode(chunk.text()));
         }
       } finally {
         controller.close();

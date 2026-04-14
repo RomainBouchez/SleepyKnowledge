@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import type { SleepRecord, LifestyleLog } from '@/lib/types';
 import { buildSleepContext } from '@/lib/claude-client';
@@ -12,9 +12,9 @@ structuré en français. Format impératif :
 Sois précis et cite des chiffres réels. Pas de formules de politesse.`;
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: 'CLAUDE_API_KEY not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'GEMINI_API_KEY not configured' }, { status: 500 });
   }
 
   const { sleepRecords, lifestyleLogs }: {
@@ -23,21 +23,17 @@ export async function POST(req: NextRequest) {
   } = await req.json();
 
   const context = buildSleepContext(sleepRecords, lifestyleLogs);
-  const anthropic = new Anthropic({ apiKey });
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: SYSTEM,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: context, cache_control: { type: 'ephemeral' } } as never,
-        { type: 'text', text: 'Génère le rapport hebdomadaire pour ces 7 jours.' },
-      ],
-    }],
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction: SYSTEM,
   });
 
-  const block = message.content[0];
-  return NextResponse.json({ content: block.type === 'text' ? block.text : '' });
+  const result = await model.generateContent(
+    context + '\n\nGénère le rapport hebdomadaire pour ces 7 jours.'
+  );
+  const text = result.response.text();
+
+  return NextResponse.json({ content: text });
 }
