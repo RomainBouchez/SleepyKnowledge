@@ -21,8 +21,8 @@ export default function Navigation() {
 
   return (
     <nav
-      className="fixed inset-x-0 z-50 flex justify-center pointer-events-none"
-      style={{ bottom: '0px' }}>
+      className="fixed inset-x-0 bottom-0 z-50 flex justify-center items-end pointer-events-none"
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 16px)' }}>
 
       {/* Floating pill dock */}
       <div

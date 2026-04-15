@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Main scrollable content — bottom padding accounts for nav bar */}
         <main
           className="h-full overflow-y-auto safe-top"
-          style={{ paddingBottom: '200px' }}
+          style={{ paddingBottom: 'calc(56px + max(env(safe-area-inset-bottom, 0px), 16px))' }}
           id="main-scroll">
           {children}
         </main>
