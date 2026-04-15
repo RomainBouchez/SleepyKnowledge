@@ -21,13 +21,13 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#080D1A',
+  themeColor: '#0a0908',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" className="h-full">
-      <body className="h-full bg-sl-bg text-sl-white overflow-hidden">
+      <body className="h-full bg-ng-bg text-ng-white overflow-hidden">
         {/* Main scrollable content — bottom padding accounts for nav bar */}
         <main className="h-full overflow-y-auto pb-20 safe-top" id="main-scroll">
           {children}

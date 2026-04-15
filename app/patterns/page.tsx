@@ -35,12 +35,12 @@ function corrLabel(r: number) {
 
 // ── Chart theme ───────────────────────────────────────────────────────────────
 
-const AXIS_STYLE = { fill: '#475569', fontSize: 10 };
-const GRID_COLOR = '#1E293B';
+const AXIS_STYLE = { fill: '#7a6e6a', fontSize: 10 };
+const GRID_COLOR = '#2a2320';
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#0F172A', border: '1px solid #1E293B', borderRadius: 8 },
-  labelStyle: { color: '#94A3B8', fontSize: 11 },
-  itemStyle: { color: '#F1F5F9', fontSize: 12 },
+  contentStyle: { background: '#131110', border: '1px solid #2a2320', borderRadius: 8 },
+  labelStyle: { color: '#7a6e6a', fontSize: 11 },
+  itemStyle: { color: '#f0ebe6', fontSize: 12 },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -86,13 +86,13 @@ export default function PatternsPage() {
   }
 
   const corrs = [
-    buildCorr('☕ Caféine → Deep sleep', 'Caféine (mg)', 'Deep sleep (%)', '#3B82F6',
+    buildCorr('☕ Caféine → Deep sleep', 'Caféine (mg)', 'Deep sleep (%)', '#ff6b35',
       l => l.caffeine_mg, r => pct(r.deep_sleep_min, r.duration_min)),
-    buildCorr('🌿 Weed → REM', 'Weed (0/1)', 'REM (%)', '#8B5CF6',
+    buildCorr('🌿 Weed → REM', 'Weed (0/1)', 'REM (%)', '#ffb040',
       l => l.weed ? 1 : 0, r => pct(r.rem_sleep_min, r.duration_min)),
-    buildCorr('🏋️ Intensité sport → Score', 'Intensité (1–10)', 'Score', '#22C55E',
+    buildCorr('🏋️ Intensité sport → Score', 'Intensité (1–10)', 'Score', '#4caf78',
       l => l.sport_intensity, r => r.sleep_score),
-    buildCorr('🍽️ Repas → FC nocturne', 'Repas (1=léger,3=lourd)', 'FC moy (bpm)', '#F59E0B',
+    buildCorr('🍽️ Repas → FC nocturne', 'Repas (1=léger,3=lourd)', 'FC moy (bpm)', '#ff9955',
       l => l.meal_heaviness === 'léger' ? 1 : l.meal_heaviness === 'normal' ? 2 : 3,
       r => r.hr_avg),
   ];
@@ -107,7 +107,7 @@ export default function PatternsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-center px-8">
         <span className="text-5xl mb-4">📊</span>
-        <p className="text-sl-gray text-sm leading-relaxed">
+        <p className="text-sm leading-relaxed" style={{ color: '#7a6e6a' }}>
           Pas assez de données.<br />Synchronise quelques nuits d'abord.
         </p>
       </div>
@@ -119,14 +119,16 @@ export default function PatternsPage() {
 
       {/* ── Header + range ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-sl-white">Patterns 📊</h1>
-        <div className="flex bg-sl-surface2 rounded-lg p-0.5">
+        <h1 className="text-xl font-black tracking-tight" style={{ color: '#f0ebe6' }}>Patterns</h1>
+        <div className="flex rounded-lg p-0.5" style={{ background: '#1c1917' }}>
           {(['7j', '30j'] as Range[]).map(r => (
             <button key={r}
               onClick={() => setRange(r)}
-              className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${
-                range === r ? 'bg-sl-blue text-white' : 'text-sl-gray'
-              }`}>{r}</button>
+              className="px-3 py-1 text-sm font-bold rounded-md transition-all"
+              style={range === r
+                ? { background: '#ff6b35', color: '#fff' }
+                : { color: '#7a6e6a' }
+              }>{r}</button>
           ))}
         </div>
       </div>
@@ -139,7 +141,7 @@ export default function PatternsPage() {
             <XAxis dataKey="x" tick={AXIS_STYLE} interval="preserveStartEnd" />
             <YAxis domain={[0, 100]} tick={AXIS_STYLE} />
             <Tooltip {...TOOLTIP_STYLE} />
-            <Area type="monotone" dataKey="y" stroke="#3B82F6" fill="#3B82F622" strokeWidth={2} />
+            <Area type="monotone" dataKey="y" stroke="#ff6b35" fill="#ff6b3520" strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -152,7 +154,7 @@ export default function PatternsPage() {
             <XAxis dataKey="x" tick={AXIS_STYLE} interval="preserveStartEnd" />
             <YAxis tick={AXIS_STYLE} />
             <Tooltip {...TOOLTIP_STYLE} />
-            <Line type="monotone" dataKey="y" stroke="#06B6D4" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="y" stroke="#ff9955" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -165,25 +167,23 @@ export default function PatternsPage() {
             <XAxis dataKey="x" tick={AXIS_STYLE} interval="preserveStartEnd" />
             <YAxis tick={AXIS_STYLE} />
             <Tooltip {...TOOLTIP_STYLE} />
-            <Line type="monotone" dataKey="deep" stroke="#3B82F6" strokeWidth={2} dot={false} name="Deep" />
-            <Line type="monotone" dataKey="rem"  stroke="#8B5CF6" strokeWidth={2} dot={false} name="REM" />
+            <Line type="monotone" dataKey="deep" stroke="#cc3300" strokeWidth={2} dot={false} name="Deep" />
+            <Line type="monotone" dataKey="rem"  stroke="#ffb040" strokeWidth={2} dot={false} name="REM" />
           </LineChart>
         </ResponsiveContainer>
         <div className="flex gap-4 mt-1">
-          <Legend color="#3B82F6" label="Deep sleep" />
-          <Legend color="#8B5CF6" label="REM" />
+          <Legend color="#cc3300" label="Deep sleep" />
+          <Legend color="#ffb040" label="REM" />
         </div>
       </ChartCard>
 
       {/* ── Correlations ───────────────────────────────────────────── */}
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-sl-gray pt-2">
-        Corrélations lifestyle → sommeil
-      </p>
+      <p className="section-label pt-2">Corrélations lifestyle → sommeil</p>
 
       {corrs.map((c, i) => (
         <ChartCard key={i} title={c.title}>
           {c.pts.length < 5 ? (
-            <p className="text-sl-muted text-xs italic py-2">Pas assez de données (min. 5 nuits)</p>
+            <p className="text-xs italic py-2" style={{ color: '#3d3330' }}>Pas assez de données (min. 5 nuits)</p>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={140}>
@@ -210,18 +210,16 @@ export default function PatternsPage() {
       {/* ── Top factors ────────────────────────────────────────────── */}
       {topFactors.length > 0 && (
         <>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-sl-gray pt-2">
-            Top facteurs du mois
-          </p>
-          <div className="card space-y-0 divide-y divide-sl-border">
+          <p className="section-label pt-2">Top facteurs du mois</p>
+          <div className="card space-y-0" style={{ background: '#131110', borderColor: '#2a2320' }}>
             {topFactors.slice(0, 3).map((f, i) => (
-              <div key={i} className="flex items-center gap-3 py-3">
-                <span className="text-sl-muted font-bold text-sm w-6">#{i + 1}</span>
+              <div key={i} className="flex items-center gap-3 py-3" style={{ borderBottom: i < 2 ? '1px solid #2a2320' : 'none' }}>
+                <span className="font-black text-sm w-6" style={{ color: '#3d3330' }}>#{i + 1}</span>
                 <div className="flex-1">
-                  <p className="text-sl-white text-sm font-semibold">{f.title}</p>
-                  <p className="text-sl-gray text-xs mt-0.5">{corrLabel(f.r)} (r={f.r.toFixed(2)})</p>
+                  <p className="text-sm font-bold" style={{ color: '#f0ebe6' }}>{f.title}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#7a6e6a' }}>{corrLabel(f.r)} (r={f.r.toFixed(2)})</p>
                 </div>
-                <span className="font-bold" style={{ color: f.r >= 0 ? '#22C55E' : '#EF4444' }}>
+                <span className="font-bold" style={{ color: f.r >= 0 ? '#4caf78' : '#e05a4a' }}>
                   {f.r >= 0 ? '▲' : '▼'}
                 </span>
               </div>
@@ -237,8 +235,8 @@ export default function PatternsPage() {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="card">
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-sl-gray mb-3">{title}</p>
+    <div className="card" style={{ background: '#131110', borderColor: '#2a2320' }}>
+      <p className="section-label mb-3">{title}</p>
       {children}
     </div>
   );
@@ -247,12 +245,15 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 function Legend({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-      <span className="text-xs text-sl-gray">{label}</span>
+      <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+      <span className="text-xs font-semibold" style={{ color: '#7a6e6a' }}>{label}</span>
     </div>
   );
 }
 
 function Spinner() {
-  return <div className="w-6 h-6 border-2 border-sl-blue border-t-transparent rounded-full animate-spin" />;
+  return (
+    <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+      style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
+  );
 }

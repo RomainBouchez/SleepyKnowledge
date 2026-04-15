@@ -7,53 +7,8 @@ import {
 } from '@/lib/db';
 import { fetchWeeklyReport } from '@/lib/claude-client';
 import { currentWeekStart, isMonday } from '@/lib/sync';
+import MarkdownContent from '@/components/MarkdownContent';
 import type { AiInsight } from '@/lib/types';
-
-// ── Markdown-lite renderer ────────────────────────────────────────────────────
-
-function ReportContent({ text }: { text: string }) {
-  return (
-    <div className="space-y-1.5">
-      {text.split('\n').map((line, i) => {
-        const t = line.trim();
-        if (!t) return <div key={i} className="h-2" />;
-
-        // Heading: ## or **...**
-        if (t.startsWith('## ') || (t.startsWith('**') && t.endsWith('**'))) {
-          const content = t.replace(/^##\s*/, '').replace(/^\*\*|\*\*$/g, '');
-          return <p key={i} className="text-sl-white font-bold text-sm mt-3">{content}</p>;
-        }
-        // Numbered list
-        const numM = t.match(/^(\d+)\.\s+(.+)/);
-        if (numM) {
-          return (
-            <div key={i} className="flex gap-2">
-              <span className="text-sl-violet text-sm font-bold shrink-0">{numM[1]}.</span>
-              <p className="text-sl-white text-sm leading-relaxed">{inlineBold(numM[2])}</p>
-            </div>
-          );
-        }
-        // Bullet
-        if (t.startsWith('- ') || t.startsWith('• ')) {
-          return (
-            <div key={i} className="flex gap-2">
-              <span className="text-sl-violet text-sm shrink-0">•</span>
-              <p className="text-sl-white text-sm leading-relaxed">{inlineBold(t.slice(2))}</p>
-            </div>
-          );
-        }
-        return <p key={i} className="text-sl-white text-sm leading-relaxed">{inlineBold(t)}</p>;
-      })}
-    </div>
-  );
-}
-
-function inlineBold(text: string): React.ReactNode {
-  const parts = text.split(/\*\*(.+?)\*\*/g);
-  return parts.map((p, i) =>
-    i % 2 === 1 ? <strong key={i} className="font-bold">{p}</strong> : p
-  );
-}
 
 function weekLabel(weekStart: string) {
   const s = new Date(weekStart + 'T12:00:00');
@@ -164,7 +119,7 @@ export default function ReportPage() {
                 })}
               </p>
               <div className="border-t border-sl-border pt-4">
-                <ReportContent text={r.content} />
+                <MarkdownContent content={r.content} />
               </div>
             </div>
           ))}

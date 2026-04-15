@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSleepRecords, getLifestyleLogs } from '@/lib/db';
 import { buildSleepContext, streamChatResponse } from '@/lib/claude-client';
+import MarkdownContent from '@/components/MarkdownContent';
 import type { ChatMessage } from '@/lib/types';
 
 const SUGGESTIONS = [
@@ -136,11 +137,13 @@ function Bubble({ msg }: { msg: ChatMessage }) {
       {!user && <span className="text-2xl shrink-0">🤖</span>}
       <div
         className={`max-w-[80%] px-4 py-2.5 ${user ? 'bubble-user' : 'bubble-assistant'}`}>
-        <p className="text-sm leading-relaxed text-sl-white whitespace-pre-wrap">
-          {msg.content || (msg.role === 'assistant'
-            ? <span className="inline-block w-1 h-4 bg-sl-blue animate-pulse rounded" />
-            : null)}
-        </p>
+        {user ? (
+          <p className="text-sm leading-relaxed text-sl-white">{msg.content}</p>
+        ) : msg.content ? (
+          <MarkdownContent content={msg.content} compact />
+        ) : (
+          <span className="inline-block w-1 h-4 bg-sl-blue animate-pulse rounded" />
+        )}
         <p className="text-[10px] text-sl-muted mt-1 text-right">
           {new Date(msg.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
         </p>

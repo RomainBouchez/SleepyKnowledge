@@ -1,4 +1,10 @@
 // ── Sleep data (imported from Mi Fitness CSV / VPS sync) ──────────────────────
+export interface SleepStageItem {
+  start_time: number;  // unix timestamp
+  end_time: number;    // unix timestamp
+  state: number;       // 2=REM, 3=light, 4=deep, 5=awake
+}
+
 export interface SleepRecord {
   id?: number;
   date: string;           // YYYY-MM-DD
@@ -15,6 +21,7 @@ export interface SleepRecord {
   hr_max: number;
   steps: number;
   imported_at: string;    // ISO timestamp
+  sleep_stages_json?: string; // JSON-encoded SleepStageItem[]
 }
 
 // ── Lifestyle factors (manual entry each evening) ─────────────────────────────

@@ -1,64 +1,68 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { scoreColor } from '@/lib/claude-client';
 
 interface Props {
-  score: number;
+  score: number;   // 0–100
   size?: number;
   strokeWidth?: number;
 }
 
-export default function SleepScoreGauge({ score, size = 180, strokeWidth = 14 }: Props) {
-  const clampedScore = Math.max(0, Math.min(100, score));
+export default function SleepScoreGauge({ score, size = 160, strokeWidth = 10 }: Props) {
+  const clamped      = Math.max(0, Math.min(100, score));
   const progressRef  = useRef<SVGCircleElement>(null);
 
-  const cx           = size / 2;
-  const cy           = size / 2;
-  const radius       = (size - strokeWidth) / 2;
-  const circumference= 2 * Math.PI * radius;
-  const arcLength    = circumference * 0.75;       // 270° track
-  const gapLength    = circumference - arcLength;
-  const progressLen  = (clampedScore / 100) * arcLength;
+  const cx            = size / 2;
+  const cy            = size / 2;
+  const radius        = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const arcLength     = circumference * 0.75;
+  const gapLength     = circumference - arcLength;
+  const progressLen   = (clamped / 100) * arcLength;
 
-  // Animate on score change via CSS transition
   useEffect(() => {
     const el = progressRef.current;
     if (!el) return;
-    // Start at full offset (0 progress) then transition to target
-    el.style.strokeDashoffset = String(arcLength); // instant reset
+    el.style.strokeDashoffset = String(arcLength);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         el.style.strokeDashoffset = String(arcLength - progressLen);
       });
     });
-  }, [clampedScore, arcLength, progressLen]);
+  }, [clamped, arcLength, progressLen]);
 
-  const color = scoreColor(clampedScore);
+  // Score as X.X / 10
+  const display  = (clamped / 10).toFixed(1);
   const rotation = `rotate(135, ${cx}, ${cy})`;
+
+  // Color band based on score
+  const arcColor = clamped >= 80 ? '#ff6b35'
+                 : clamped >= 60 ? '#ff8c00'
+                 : clamped >= 40 ? '#ffb040'
+                 : '#e05a4a';
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg width={size} height={size}>
         <defs>
-          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={color} stopOpacity={0.7} />
-            <stop offset="100%" stopColor={color} stopOpacity={1} />
+          <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={arcColor} stopOpacity={0.5} />
+            <stop offset="100%" stopColor={arcColor} stopOpacity={1} />
           </linearGradient>
         </defs>
 
-        {/* Background track */}
+        {/* Track */}
         <circle
           cx={cx} cy={cy} r={radius}
           fill="none"
-          stroke="#1E293B"
+          stroke="#2a2320"
           strokeWidth={strokeWidth}
           strokeDasharray={`${arcLength} ${gapLength}`}
           strokeLinecap="round"
           transform={rotation}
         />
 
-        {/* Progress arc */}
+        {/* Progress */}
         <circle
           ref={progressRef}
           cx={cx} cy={cy} r={radius}
@@ -73,16 +77,17 @@ export default function SleepScoreGauge({ score, size = 180, strokeWidth = 14 }:
         />
       </svg>
 
-      {/* Score label */}
-      <div
-        className="absolute inset-0 flex flex-col items-center justify-center"
-        style={{ top: 0 }}>
-        <span
-          className="font-bold leading-none"
-          style={{ fontSize: 52, letterSpacing: -2, color }}>
-          {clampedScore}
-        </span>
-        <span className="text-sl-muted text-sm font-medium">/100</span>
+      {/* Label */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ paddingBottom: 8 }}>
+        <div className="flex items-baseline gap-0.5">
+          <span
+            className="font-black leading-none"
+            style={{ fontSize: 42, letterSpacing: -2, color: arcColor }}>
+            {display}
+          </span>
+          <span className="font-bold" style={{ fontSize: 16, color: arcColor, opacity: 0.6 }}>/10</span>
+        </div>
+        <span className="section-label mt-1">Score</span>
       </div>
     </div>
   );

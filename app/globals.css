@@ -4,14 +4,13 @@
 
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 html, body {
-  background-color: #080D1A;
-  color: #F1F5F9;
+  background-color: #0a0908;
+  color: #f0ebe6;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 
-/* Remove default tap highlight on mobile */
 * {
   -webkit-tap-highlight-color: transparent;
 }
@@ -20,16 +19,16 @@ html, body {
 .safe-top    { padding-top:    env(safe-area-inset-top,    0px); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
 
-/* ── Scrollbars (webkit) ───────────────────────────────────────────────────── */
+/* ── Scrollbars ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 0; height: 0; }
 
-/* ── Range input (slider) styling ──────────────────────────────────────────── */
+/* ── Range input ───────────────────────────────────────────────────────────── */
 input[type='range'] {
   -webkit-appearance: none;
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background: #1E293B;
+  background: #1c1917;
   outline: none;
 }
 input[type='range']::-webkit-slider-thumb {
@@ -37,18 +36,18 @@ input[type='range']::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #3B82F6;
+  background: #ff6b35;
   cursor: pointer;
-  box-shadow: 0 0 0 3px #3B82F633;
+  box-shadow: 0 0 0 3px #ff6b3533;
 }
-input[type='range'].violet::-webkit-slider-thumb { background: #8B5CF6; box-shadow: 0 0 0 3px #8B5CF633; }
+input[type='range'].violet::-webkit-slider-thumb { background: #ff9955; box-shadow: 0 0 0 3px #ff995533; }
 
 /* ── Time input ────────────────────────────────────────────────────────────── */
 input[type='time'] {
   color-scheme: dark;
-  background: #1E293B;
-  color: #F1F5F9;
-  border: 1px solid #1E293B;
+  background: #1c1917;
+  color: #f0ebe6;
+  border: 1px solid #2a2320;
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 15px;
@@ -68,7 +67,7 @@ input[type='time'] {
   position: absolute;
   inset: 0;
   border-radius: 13px;
-  background: #1E293B;
+  background: #1c1917;
   transition: background 0.2s;
 }
 .toggle-slider::before {
@@ -79,10 +78,10 @@ input[type='time'] {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #94A3B8;
+  background: #3d3330;
   transition: transform 0.2s, background 0.2s;
 }
-.toggle input:checked + .toggle-slider { background: #8B5CF6; }
+.toggle input:checked + .toggle-slider { background: #ff6b35; }
 .toggle input:checked + .toggle-slider::before {
   transform: translateX(18px);
   background: #fff;
@@ -90,8 +89,8 @@ input[type='time'] {
 
 /* ── Card ──────────────────────────────────────────────────────────────────── */
 .card {
-  background: #0F172A;
-  border: 1px solid #1E293B;
+  background: #131110;
+  border: 1px solid #2a2320;
   border-radius: 16px;
   padding: 16px;
 }
@@ -100,18 +99,18 @@ input[type='time'] {
 .pill {
   padding: 6px 12px;
   border-radius: 20px;
-  background: #1E293B;
-  border: 1px solid #1E293B;
+  background: #1c1917;
+  border: 1px solid #2a2320;
   font-size: 13px;
   font-weight: 500;
-  color: #94A3B8;
+  color: #7a6e6a;
   cursor: pointer;
   transition: all 0.15s;
 }
 .pill.active {
-  background: #3B82F633;
-  border-color: #3B82F6;
-  color: #3B82F6;
+  background: #ff6b3520;
+  border-color: #ff6b35;
+  color: #ff6b35;
 }
 
 /* ── Gauge animation ───────────────────────────────────────────────────────── */
@@ -120,10 +119,33 @@ input[type='time'] {
 }
 
 /* ── Chat bubble ───────────────────────────────────────────────────────────── */
-.bubble-user      { background: #3B82F6; border-radius: 18px 18px 4px 18px; }
-.bubble-assistant { background: #0F172A; border: 1px solid #1E293B; border-radius: 18px 18px 18px 4px; }
+.bubble-user      { background: #ff6b35; border-radius: 18px 18px 4px 18px; }
+.bubble-assistant { background: #131110; border: 1px solid #2a2320; border-radius: 18px 18px 18px 4px; }
 
 /* ── Textarea/input ────────────────────────────────────────────────────────── */
 textarea, input[type='text'] {
   color-scheme: dark;
+}
+
+/* ── Section label ─────────────────────────────────────────────────────────── */
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7a6e6a;
+}
+
+/* ── Curator label (top-nav brand) ────────────────────────────────────────── */
+.curator-brand {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ff6b35;
+}
+
+/* ── Orange glow on active element ────────────────────────────────────────── */
+.glow-orange {
+  box-shadow: 0 0 16px rgba(255, 107, 53, 0.35);
 }
