@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { SleepRecord } from '@/lib/types';
-import { todayStr } from '@/lib/db';
+import { todayStr, getSleepRecordByDate } from '@/lib/db';
 
 interface Props {
   visible: boolean;
@@ -43,14 +43,23 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [hrUnknown, setHrUnknown] = useState(false);
+  const [existingLoaded, setExistingLoaded] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setForm(defaultForm());
       setError('');
       setHrUnknown(false);
+      setExistingLoaded(false);
     }
   }, [visible]);
+
+  function loadRecord(rec: SleepRecord) {
+    const { id: _id, ...fields } = rec;
+    setForm(fields);
+    setHrUnknown(rec.hr_avg === 0 && rec.hr_min === 0 && rec.hr_max === 0);
+    setExistingLoaded(true);
+  }
 
   function set<K extends keyof typeof form>(key: K, val: (typeof form)[K]) {
     setForm(p => {
@@ -63,6 +72,14 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
       }
       return next;
     });
+  }
+
+  async function handleDateChange(date: string) {
+    set('date', date);
+    setExistingLoaded(false);
+    if (!date) return;
+    const rec = await getSleepRecordByDate(date);
+    if (rec) loadRecord(rec);
   }
 
   function phaseSum() {
@@ -117,10 +134,15 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
             <input
               type="date"
               value={form.date}
-              onChange={e => set('date', e.target.value)}
+              onChange={e => handleDateChange(e.target.value)}
               className="bg-sl-bg border border-sl-border rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-sl-accent"
             />
           </Row>
+          {existingLoaded && (
+            <p className="text-xs text-yellow-400 mt-1">
+              ⚠️ Données existantes chargées — tu modifies une nuit déjà enregistrée.
+            </p>
+          )}
         </Section>
 
         {/* ── Horaires ── */}
