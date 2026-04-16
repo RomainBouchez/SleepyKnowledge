@@ -23,6 +23,22 @@ export async function pushSleepRecords(
   }
 }
 
+export async function deleteSleepRecordsFromCloud(
+  deviceId: string,
+  dates: string[]
+): Promise<void> {
+  if (!deviceId || !dates.length) return;
+  try {
+    await fetch('/api/db/sleep', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, dates }),
+    });
+  } catch (e) {
+    console.warn('[cloud-sync] deleteSleepRecords failed (offline?)', e);
+  }
+}
+
 export async function pullSleepRecords(
   deviceId: string,
   days = 90

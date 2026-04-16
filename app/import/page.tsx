@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
-import { upsertSleepRecord, getSleepRecords } from '@/lib/db';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -40,6 +40,12 @@ export default function ImportPage() {
   const [dbLimit, setDbLimit] = useState(30);
   const [selected, setSelected] = useState<SleepRecord | null>(null);
 
+  // Selection & deletion
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [checkedDates, setCheckedDates] = useState<Set<string>>(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState<'selected' | 'all' | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   useEffect(() => {
     loadDbRecords();
   }, []);
@@ -49,6 +55,38 @@ export default function ImportPage() {
     const records = await getSleepRecords(limit);
     setDbRecords(records.slice().reverse()); // newest first
     setDbLoading(false);
+  };
+
+  const toggleCheck = (date: string) => {
+    setCheckedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date); else next.add(date);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (checkedDates.size === dbRecords.length) {
+      setCheckedDates(new Set());
+    } else {
+      setCheckedDates(new Set(dbRecords.map(r => r.date)));
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setCheckedDates(new Set());
+  };
+
+  const handleDelete = async (dates: string[]) => {
+    if (!dates.length) return;
+    setIsDeleting(true);
+    await deleteSleepRecordsByDates(dates);
+    setDeleteConfirm(null);
+    setCheckedDates(new Set());
+    setSelectionMode(false);
+    await loadDbRecords(dbLimit);
+    setIsDeleting(false);
   };
 
   // ── File selection ──────────────────────────────────────────────────────────
@@ -359,14 +397,45 @@ export default function ImportPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-white font-semibold text-lg">Données stockées</h2>
-              <p className="text-sl-muted text-xs">{dbRecords.length} nuit{dbRecords.length !== 1 ? 's' : ''} en base</p>
+              <p className="text-sl-muted text-xs">
+                {selectionMode && checkedDates.size > 0
+                  ? `${checkedDates.size} sélectionnée${checkedDates.size > 1 ? 's' : ''}`
+                  : `${dbRecords.length} nuit${dbRecords.length !== 1 ? 's' : ''} en base`}
+              </p>
             </div>
-            <button
-              onClick={() => loadDbRecords(dbLimit)}
-              className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
-            >
-              ↻ Rafraîchir
-            </button>
+            {selectionMode ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleSelectAll}
+                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
+                >
+                  {checkedDates.size === dbRecords.length ? 'Tout désél.' : 'Tout sél.'}
+                </button>
+                <button
+                  onClick={exitSelectionMode}
+                  className="text-sl-muted text-sm hover:text-white transition-colors"
+                >
+                  Annuler
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => loadDbRecords(dbLimit)}
+                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
+                >
+                  ↻ Rafraîchir
+                </button>
+                {dbRecords.length > 0 && (
+                  <button
+                    onClick={() => setSelectionMode(true)}
+                    className="text-sl-muted text-sm hover:text-white transition-colors"
+                  >
+                    Sélectionner
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {dbLoading ? (
@@ -379,7 +448,8 @@ export default function ImportPage() {
           ) : (
             <>
               {/* Table header */}
-              <div className="grid grid-cols-[90px_1fr_1fr_52px] gap-2 px-3 mb-1">
+              <div className={`gap-2 px-3 mb-1 grid ${selectionMode ? 'grid-cols-[32px_82px_1fr_1fr_44px]' : 'grid-cols-[90px_1fr_1fr_52px]'}`}>
+                {selectionMode && <span />}
                 <span className="text-sl-muted text-xs">Date</span>
                 <span className="text-sl-muted text-xs">Horaires</span>
                 <span className="text-sl-muted text-xs">Phases</span>
@@ -390,9 +460,17 @@ export default function ImportPage() {
                 {dbRecords.map(r => (
                   <div
                     key={r.date}
-                    onClick={() => setSelected(r)}
-                    className="bg-sl-card rounded-xl px-3 py-3 grid grid-cols-[90px_1fr_1fr_52px] gap-2 items-center cursor-pointer hover:bg-sl-surface transition-colors active:scale-[0.99]"
+                    onClick={() => selectionMode ? toggleCheck(r.date) : setSelected(r)}
+                    className={`bg-sl-card rounded-xl px-3 py-3 grid gap-2 items-center cursor-pointer hover:bg-sl-surface transition-colors active:scale-[0.99] ${selectionMode ? 'grid-cols-[32px_82px_1fr_1fr_44px]' : 'grid-cols-[90px_1fr_1fr_52px]'} ${selectionMode && checkedDates.has(r.date) ? 'ring-1 ring-sl-accent bg-sl-accent/5' : ''}`}
                   >
+                    {/* Checkbox */}
+                    {selectionMode && (
+                      <div className="flex items-center justify-center">
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checkedDates.has(r.date) ? 'bg-sl-accent border-sl-accent' : 'border-sl-border'}`}>
+                          {checkedDates.has(r.date) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                        </div>
+                      </div>
+                    )}
                     {/* Date */}
                     <span className="text-white text-xs font-medium">{r.date}</span>
 
@@ -446,6 +524,27 @@ export default function ImportPage() {
                   Voir 30 de plus…
                 </button>
               )}
+
+              {/* Barre de suppression sélection */}
+              {selectionMode && (
+                <button
+                  disabled={checkedDates.size === 0 || isDeleting}
+                  onClick={() => setDeleteConfirm('selected')}
+                  className="w-full mt-3 py-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 font-semibold text-sm disabled:opacity-30 hover:bg-red-500/30 transition-colors"
+                >
+                  {isDeleting ? 'Suppression…' : `Supprimer (${checkedDates.size})`}
+                </button>
+              )}
+
+              {/* Tout supprimer */}
+              {!selectionMode && (
+                <button
+                  onClick={() => setDeleteConfirm('all')}
+                  className="w-full mt-3 py-2 rounded-xl border border-red-500/20 text-red-400/50 text-xs hover:border-red-500/50 hover:text-red-400 transition-colors"
+                >
+                  Tout supprimer
+                </button>
+              )}
             </>
           )}
         </div>
@@ -454,6 +553,40 @@ export default function ImportPage() {
       {/* ── Drawer détail nuit ── */}
       {selected && (
         <SleepDetailDrawer record={selected} onClose={() => setSelected(null)} />
+      )}
+
+      {/* ── Modale confirmation suppression ── */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-sl-surface rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <h3 className="text-white font-semibold text-lg">Confirmer la suppression</h3>
+            <p className="text-sl-muted text-sm">
+              {deleteConfirm === 'all'
+                ? `Supprimer les ${dbRecords.length} nuits stockées ? Cette action est irréversible.`
+                : `Supprimer ${checkedDates.size} nuit${checkedDates.size > 1 ? 's' : ''} sélectionnée${checkedDates.size > 1 ? 's' : ''} ? Cette action est irréversible.`}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isDeleting}
+                className="flex-1 py-3 rounded-xl border border-sl-border text-sl-muted hover:text-white transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleDelete(
+                  deleteConfirm === 'all'
+                    ? dbRecords.map(r => r.date)
+                    : Array.from(checkedDates)
+                )}
+                disabled={isDeleting}
+                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? 'Suppression…' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Navigation />

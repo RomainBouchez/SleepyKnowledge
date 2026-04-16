@@ -161,6 +161,18 @@ export async function neonGetLifestyleLogs(
   }));
 }
 
+export async function neonDeleteSleepRecords(
+  deviceId: string,
+  dates: string[]
+): Promise<void> {
+  if (!dates.length) return;
+  await sql`
+    DELETE FROM sleep_records
+    WHERE device_id = ${deviceId}
+      AND date = ANY(${dates}::date[])
+  `;
+}
+
 // ── AI insights ───────────────────────────────────────────────────────────────
 
 export async function neonUpsertAiInsight(

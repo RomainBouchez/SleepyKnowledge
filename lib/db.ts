@@ -13,6 +13,7 @@ import {
   pullSleepRecords,
   pullLifestyleLogs,
   pullAiInsights,
+  deleteSleepRecordsFromCloud,
 } from './cloud-sync';
 
 // ── Database class ────────────────────────────────────────────────────────────
@@ -65,6 +66,12 @@ export async function getLatestSleepRecord(): Promise<SleepRecord | null> {
 export async function getTodaySleepRecord(): Promise<SleepRecord | null> {
   const rec = await getDb().sleepRecords.where('date').equals(todayStr()).first();
   return rec ?? null;
+}
+
+export async function deleteSleepRecordsByDates(dates: string[]): Promise<void> {
+  if (!dates.length) return;
+  await getDb().sleepRecords.where('date').anyOf(dates).delete();
+  deleteSleepRecordsFromCloud(getDeviceId(), dates);
 }
 
 // ── Lifestyle logs ────────────────────────────────────────────────────────────
