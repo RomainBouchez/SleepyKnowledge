@@ -92,6 +92,11 @@ export async function getTodayLifestyleLog(): Promise<LifestyleLog | null> {
   return log ?? null;
 }
 
+export async function getLifestyleLogByDate(date: string): Promise<LifestyleLog | null> {
+  const log = await getDb().lifestyleLogs.where('date').equals(date).first();
+  return log ?? null;
+}
+
 export async function getLifestyleLogs(days = 30): Promise<LifestyleLog[]> {
   const all = await getDb().lifestyleLogs.orderBy('date').reverse().limit(days).toArray();
   return all.reverse();
