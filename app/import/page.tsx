@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
+import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
 import { upsertSleepRecord, getSleepRecords, getExistingDates } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
@@ -41,6 +42,7 @@ export default function ImportPage() {
   const [dbLoading, setDbLoading] = useState(true);
   const [dbLimit, setDbLimit] = useState(30);
   const [selected, setSelected] = useState<SleepRecord | null>(null);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   useEffect(() => {
     loadDbRecords();
@@ -400,12 +402,20 @@ export default function ImportPage() {
               <h2 className="text-white font-semibold text-lg">Données stockées</h2>
               <p className="text-sl-muted text-xs">{dbRecords.length} nuit{dbRecords.length !== 1 ? 's' : ''} en base</p>
             </div>
-            <button
-              onClick={() => loadDbRecords(dbLimit)}
-              className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
-            >
-              ↻ Rafraîchir
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowManualForm(true)}
+                className="bg-sl-accent text-white text-sm font-semibold px-3 py-1.5 rounded-lg hover:bg-sl-accent/80 transition-colors"
+              >
+                + Saisir
+              </button>
+              <button
+                onClick={() => loadDbRecords(dbLimit)}
+                className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
+              >
+                ↻ Rafraîchir
+              </button>
+            </div>
           </div>
 
           {dbLoading ? (
@@ -494,6 +504,16 @@ export default function ImportPage() {
       {selected && (
         <SleepDetailDrawer record={selected} onClose={() => setSelected(null)} />
       )}
+
+      {/* ── Formulaire saisie manuelle ── */}
+      <ManualNightForm
+        visible={showManualForm}
+        onSave={async (record) => {
+          await upsertSleepRecord(record);
+          loadDbRecords(dbLimit);
+        }}
+        onClose={() => setShowManualForm(false)}
+      />
 
       <Navigation />
     </div>
