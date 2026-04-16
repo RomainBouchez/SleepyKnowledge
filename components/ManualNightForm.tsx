@@ -42,11 +42,13 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
   const [form, setForm] = useState<Omit<SleepRecord, 'id'>>(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [hrUnknown, setHrUnknown] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setForm(defaultForm());
       setError('');
+      setHrUnknown(false);
     }
   }, [visible]);
 
@@ -76,7 +78,9 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
     }
     setSaving(true);
     try {
-      await onSave({ ...form, imported_at: new Date().toISOString() });
+      const record = { ...form, imported_at: new Date().toISOString() };
+      if (hrUnknown) { record.hr_avg = 0; record.hr_min = 0; record.hr_max = 0; }
+      await onSave(record);
       onClose();
     } catch {
       setError('Erreur lors de la sauvegarde.');
@@ -177,18 +181,29 @@ export default function ManualNightForm({ visible, onSave, onClose }: Props) {
 
         {/* ── FC ── */}
         <Section title="❤️  Fréquence cardiaque (bpm)">
-          <Row label="Minimale">
-            <NumberInput value={form.hr_min} min={30} max={120}
-              onChange={v => set('hr_min', v)} />
+          <Row label="Je ne sais pas">
+            <label className="toggle">
+              <input type="checkbox" checked={hrUnknown}
+                onChange={e => setHrUnknown(e.target.checked)} />
+              <span className="toggle-slider" />
+            </label>
           </Row>
-          <Row label="Moyenne">
-            <NumberInput value={form.hr_avg} min={30} max={120}
-              onChange={v => set('hr_avg', v)} />
-          </Row>
-          <Row label="Maximale">
-            <NumberInput value={form.hr_max} min={30} max={180}
-              onChange={v => set('hr_max', v)} />
-          </Row>
+          {!hrUnknown && (
+            <>
+              <Row label="Minimale">
+                <NumberInput value={form.hr_min} min={30} max={120}
+                  onChange={v => set('hr_min', v)} />
+              </Row>
+              <Row label="Moyenne">
+                <NumberInput value={form.hr_avg} min={30} max={120}
+                  onChange={v => set('hr_avg', v)} />
+              </Row>
+              <Row label="Maximale">
+                <NumberInput value={form.hr_max} min={30} max={180}
+                  onChange={v => set('hr_max', v)} />
+              </Row>
+            </>
+          )}
         </Section>
 
         {/* ── Pas ── */}
