@@ -58,6 +58,11 @@ export async function getSleepRecords(days = 30): Promise<SleepRecord[]> {
   return all.reverse(); // oldest first for charting
 }
 
+export async function getExistingDates(): Promise<Set<string>> {
+  const dates = await getDb().sleepRecords.orderBy('date').keys();
+  return new Set(dates as string[]);
+}
+
 export async function getLatestSleepRecord(): Promise<SleepRecord | null> {
   const rec = await getDb().sleepRecords.orderBy('date').last();
   return rec ?? null;

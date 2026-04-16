@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
-import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates } from '@/lib/db';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
