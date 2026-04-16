@@ -29,7 +29,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" className="h-full">
       <body className="h-full bg-ng-bg text-ng-white overflow-hidden">
         {/* Main scrollable content — bottom padding accounts for nav bar */}
-        <main className="h-full overflow-y-auto pb-20 safe-top" id="main-scroll">
+        <main
+          className="h-full overflow-y-auto safe-top"
+          style={{ paddingBottom: '200px' }}
+          id="main-scroll">
           {children}
         </main>
         {/* Fixed bottom navigation */}

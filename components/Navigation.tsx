@@ -22,7 +22,7 @@ export default function Navigation() {
   return (
     <nav
       className="fixed inset-x-0 z-50 flex justify-center pointer-events-none"
-      style={{ bottom: 'max(env(safe-area-inset-bottom, 0px) + 16px, 20px)' }}>
+      style={{ bottom: '0px' }}>
 
       {/* Floating pill dock */}
       <div
@@ -36,8 +36,8 @@ export default function Navigation() {
           WebkitBackdropFilter: 'blur(28px) saturate(200%)',
           border: '1px solid rgba(255, 255, 255, 0.07)',
           boxShadow: [
-            '0 8px 32px rgba(0, 0, 0, 0.55)',
-            '0 2px 8px rgba(0, 0, 0, 0.4)',
+            '0 -8px 32px rgba(0, 0, 0, 0.55)',
+            '0 -2px 8px rgba(0, 0, 0, 0.4)',
             'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
           ].join(', '),
         }}>
