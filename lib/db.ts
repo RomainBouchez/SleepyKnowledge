@@ -13,6 +13,7 @@ import {
   pullSleepRecords,
   pullLifestyleLogs,
   pullAiInsights,
+  deleteSleepRecordsFromCloud,
 } from './cloud-sync';
 
 // ── Database class ────────────────────────────────────────────────────────────
@@ -57,11 +58,9 @@ export async function getSleepRecords(days = 30): Promise<SleepRecord[]> {
   return all.reverse(); // oldest first for charting
 }
 
-export async function getExistingDates(dates: string[]): Promise<string[]> {
-  const results = await Promise.all(
-    dates.map(d => getDb().sleepRecords.where('date').equals(d).first())
-  );
-  return dates.filter((_, i) => results[i] != null);
+export async function getExistingDates(): Promise<Set<string>> {
+  const dates = await getDb().sleepRecords.orderBy('date').keys();
+  return new Set(dates as string[]);
 }
 
 export async function getSleepRecordByDate(date: string): Promise<SleepRecord | null> {
@@ -79,6 +78,12 @@ export async function getTodaySleepRecord(): Promise<SleepRecord | null> {
   return rec ?? null;
 }
 
+export async function deleteSleepRecordsByDates(dates: string[]): Promise<void> {
+  if (!dates.length) return;
+  await getDb().sleepRecords.where('date').anyOf(dates).delete();
+  deleteSleepRecordsFromCloud(getDeviceId(), dates);
+}
+
 // ── Lifestyle logs ────────────────────────────────────────────────────────────
 
 export async function upsertLifestyleLog(log: Omit<LifestyleLog, 'id'>): Promise<void> {
@@ -94,6 +99,11 @@ export async function upsertLifestyleLog(log: Omit<LifestyleLog, 'id'>): Promise
 
 export async function getTodayLifestyleLog(): Promise<LifestyleLog | null> {
   const log = await getDb().lifestyleLogs.where('date').equals(todayStr()).first();
+  return log ?? null;
+}
+
+export async function getLifestyleLogByDate(date: string): Promise<LifestyleLog | null> {
+  const log = await getDb().lifestyleLogs.where('date').equals(date).first();
   return log ?? null;
 }
 
