@@ -6,7 +6,7 @@ import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
 import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
-import { upsertSleepRecord, getSleepRecords, getExistingDates } from '@/lib/db';
+import { upsertSleepRecord, getSleepRecords, getExistingDates, getSleepRecordByDate } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -166,10 +166,21 @@ export default function ImportPage() {
     const total = parsed.sleepRecords.length;
     let count = 0;
 
+    // Pre-fetch existing records for overlap dates to preserve the best steps value
+    const existingByDate = new Map<string, { steps: number }>();
+    await Promise.all(
+      overlapDates.map(async date => {
+        const rec = await getSleepRecordByDate(date);
+        if (rec) existingByDate.set(date, { steps: rec.steps });
+      })
+    );
+
     for (const record of parsed.sleepRecords) {
       // Skip records with zero sleep score and zero duration (no data)
       if (record.sleep_score === 0 && record.duration_min === 0) continue;
-      await upsertSleepRecord({ ...record, imported_at: now });
+      const existing = existingByDate.get(record.date);
+      const steps = existing ? Math.max(existing.steps, record.steps) : record.steps;
+      await upsertSleepRecord({ ...record, steps, imported_at: now });
       count++;
       setProgress(Math.round((count / total) * 100));
     }
