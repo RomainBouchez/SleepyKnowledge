@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { neonGetSleepRecords, neonUpsertSleepRecord } from '@/lib/neon-db';
+import { neonGetSleepRecords, neonUpsertSleepRecord, neonDeleteSleepRecords } from '@/lib/neon-db';
 import type { SleepRecord } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -22,4 +22,16 @@ export async function POST(req: NextRequest) {
 
   await Promise.all(records.map((r) => neonUpsertSleepRecord(deviceId, r)));
   return NextResponse.json({ ok: true, count: records.length });
+}
+
+export async function DELETE(req: NextRequest) {
+  const { deviceId, dates } = await req.json() as {
+    deviceId: string;
+    dates: string[];
+  };
+  if (!deviceId || !dates?.length) {
+    return NextResponse.json({ error: 'deviceId and dates required' }, { status: 400 });
+  }
+  await neonDeleteSleepRecords(deviceId, dates);
+  return NextResponse.json({ ok: true, count: dates.length });
 }
