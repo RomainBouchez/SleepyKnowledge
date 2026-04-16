@@ -141,7 +141,7 @@ export async function syncFromCloud(): Promise<void> {
 
   // Upsert into local IndexedDB — skip cloud push (already from cloud)
   await Promise.all(
-    sleepRows.map(async (r) => {
+    sleepRows.map(async (r: Omit<SleepRecord, 'id'>) => {
       const existing = await getDb().sleepRecords.where('date').equals(r.date).first();
       if (existing?.id != null) {
         await getDb().sleepRecords.update(existing.id, r);
@@ -152,7 +152,7 @@ export async function syncFromCloud(): Promise<void> {
   );
 
   await Promise.all(
-    lifestyleRows.map(async (l) => {
+    lifestyleRows.map(async (l: Omit<LifestyleLog, 'id'>) => {
       const existing = await getDb().lifestyleLogs.where('date').equals(l.date).first();
       if (existing?.id != null) {
         await getDb().lifestyleLogs.update(existing.id, l);
@@ -163,7 +163,7 @@ export async function syncFromCloud(): Promise<void> {
   );
 
   await Promise.all(
-    insightRows.map(async (i) => {
+    insightRows.map(async (i: Omit<AiInsight, 'id'>) => {
       const existing = await getDb().aiInsights
         .where('[date+type]')
         .equals([i.date, i.type])

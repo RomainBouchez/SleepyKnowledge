@@ -9,6 +9,7 @@ const TABS = [
   { href: '/patterns', label: 'Trends',  icon: '◉' },
   { href: '/report',   label: 'Rapport', icon: '▦' },
   { href: '/import',   label: 'Import',  icon: '⇩' },
+  { href: '/sync',     label: 'Sync',    icon: '⇄' },
 ];
 
 const N = TABS.length;
