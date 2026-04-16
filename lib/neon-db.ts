@@ -8,6 +8,22 @@ const sql = neon(process.env.DATABASE_URL!);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Postgres DATE → "YYYY-MM-DD"
+ *  Neon serverless returns DATE columns as JS Date objects whose .toString()
+ *  yields "Mon Nov 01 2026 …" — we must use toISOString() instead.
+ */
+function toDateStr(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return v.slice(0, 10);
+  return '';
+}
+
+/** Postgres TIMESTAMPTZ → ISO 8601 string */
+function toTimestamp(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  return String(v ?? '');
+}
+
 /** Postgres TIME → "HH:MM" */
 function toHHMM(t: unknown): string {
   if (!t || typeof t !== 'string') return '';
@@ -70,7 +86,7 @@ export async function neonGetSleepRecords(
     LIMIT ${days}
   `;
   return rows.map((r) => ({
-    date:             String(r.date).slice(0, 10),
+    date:             toDateStr(r.date),
     sleep_start:      toHHMM(r.sleep_start),
     sleep_end:        toHHMM(r.sleep_end),
     duration_min:     toInt(r.duration_min),
@@ -83,7 +99,7 @@ export async function neonGetSleepRecords(
     hr_min:           toFloat(r.hr_min),
     hr_max:           toFloat(r.hr_max),
     steps:            toInt(r.steps),
-    imported_at:      String(r.imported_at),
+    imported_at:      toTimestamp(r.imported_at),
     sleep_stages_json: r.sleep_stages_json ? String(r.sleep_stages_json) : undefined,
   }));
 }
@@ -130,7 +146,7 @@ export async function neonGetLifestyleLogs(
     LIMIT ${days}
   `;
   return rows.map((r) => ({
-    date:               String(r.date).slice(0, 10),
+    date:               toDateStr(r.date),
     caffeine_mg:        toInt(r.caffeine_mg),
     caffeine_last_hour: toHHMM(r.caffeine_last_hour),
     sport_type:         String(r.sport_type ?? ''),
@@ -143,6 +159,18 @@ export async function neonGetLifestyleLogs(
     weed_hour:          toHHMM(r.weed_hour),
     notes:              String(r.notes ?? ''),
   }));
+}
+
+export async function neonDeleteSleepRecords(
+  deviceId: string,
+  dates: string[]
+): Promise<void> {
+  if (!dates.length) return;
+  await sql`
+    DELETE FROM sleep_records
+    WHERE device_id = ${deviceId}
+      AND date = ANY(${dates}::date[])
+  `;
 }
 
 // ── AI insights ───────────────────────────────────────────────────────────────
@@ -171,9 +199,9 @@ export async function neonGetAiInsights(
     LIMIT ${limit}
   `;
   return rows.map((r) => ({
-    date:         String(r.date).slice(0, 10),
+    date:         toDateStr(r.date),
     type:         r.type as AiInsight['type'],
     content:      String(r.content),
-    generated_at: String(r.generated_at),
+    generated_at: toTimestamp(r.generated_at),
   }));
 }

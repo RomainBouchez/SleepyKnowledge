@@ -5,9 +5,8 @@ import SleepScoreGauge from '@/components/SleepScoreGauge';
 import MetricCard from '@/components/MetricCard';
 import LifestyleForm from '@/components/LifestyleForm';
 import {
-  getSleepRecords, getLatestSleepRecord, getTodayLifestyleLog,
+  getSleepRecords, getLifestyleLogByDate,
   upsertLifestyleLog, saveAiInsight, getAiInsight, upsertSleepRecord,
-  todayStr,
 } from '@/lib/db';
 import { fetchMorningScore, buildSleepContext } from '@/lib/claude-client';
 import type { SleepRecord, LifestyleLog } from '@/lib/types';
@@ -19,6 +18,12 @@ const pct     = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0
 const fmtDate = (d?: string) => d
   ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
   : '';
+
+function localYesterdayStr(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // Sleep architect bar chart — generates a plausible pattern from phase mins
 function buildArchitectBars(
@@ -64,17 +69,21 @@ function buildArchitectBars(
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [ready,      setReady]      = useState(false);
-  const [sleep,      setSleep]      = useState<SleepRecord | null>(null);
-  const [lifestyle,  setLifestyle]  = useState<LifestyleLog | null>(null);
-  const [aiComment,  setAiComment]  = useState('');
-  const [loadingAi,  setLoadingAi]  = useState(false);
-  const [syncing,    setSyncing]    = useState(false);
-  const [formOpen,   setFormOpen]   = useState(false);
-  const [trend,      setTrend]      = useState<{ score: number; dur: number } | null>(null);
-  const [stepsEdit,  setStepsEdit]  = useState(false);
-  const [stepsInput, setStepsInput] = useState('');
-  const aborted = useRef(false);
+  const [ready,        setReady]        = useState(false);
+  const [allRecords,   setAllRecords]   = useState<SleepRecord[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [lifestyle,    setLifestyle]    = useState<LifestyleLog | null>(null);
+  const [aiComment,    setAiComment]    = useState('');
+  const [loadingAi,    setLoadingAi]    = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
+  const [formOpen,     setFormOpen]     = useState(false);
+  const [trend,        setTrend]        = useState<{ score: number; dur: number } | null>(null);
+  const [stepsEdit,    setStepsEdit]    = useState(false);
+  const [stepsInput,   setStepsInput]   = useState('');
+  const aborted   = useRef(false);
+  const aiDateRef = useRef<string | null>(null);
+
+  const sleep = allRecords[currentIndex] ?? null;
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -88,18 +97,20 @@ export default function DashboardPage() {
   }, []);
 
   const loadData = useCallback(async () => {
-    const [latestSleep, todayLog, allRecords] = await Promise.all([
-      getLatestSleepRecord(),
-      getTodayLifestyleLog(),
-      getSleepRecords(14),
-    ]);
+    const records = await getSleepRecords(90); // oldest first from db
+    const newestFirst = records.slice().reverse();
+    setAllRecords(newestFirst);
 
-    setSleep(latestSleep);
-    setLifestyle(todayLog);
+    // Default to yesterday's night; fall back to most recent
+    const yest = localYesterdayStr();
+    const idx  = newestFirst.findIndex(r => r.date === yest);
+    const startIdx = idx >= 0 ? idx : 0;
+    setCurrentIndex(startIdx);
 
-    if (allRecords.length >= 2) {
-      const recent = allRecords.slice(-7);
-      const prev   = allRecords.slice(-14, -7);
+    // Trend: compare last 7 vs previous 7 nights
+    if (records.length >= 2) {
+      const recent = records.slice(-7);
+      const prev   = records.slice(-14, -7);
       if (recent.length && prev.length) {
         const avg = (arr: SleepRecord[], k: keyof SleepRecord) =>
           arr.reduce((s, r) => s + Number(r[k]), 0) / arr.length;
@@ -110,8 +121,28 @@ export default function DashboardPage() {
       }
     }
 
-    if (latestSleep) await loadAiComment(latestSleep, todayLog);
+    const rec = newestFirst[startIdx];
+    if (rec) {
+      const log = await getLifestyleLogByDate(rec.date);
+      setLifestyle(log);
+      await loadAiComment(rec, log);
+    }
   }, []);
+
+  // Reload lifestyle + AI when navigating to a different night
+  useEffect(() => {
+    const rec = allRecords[currentIndex];
+    if (!rec || !ready) return;
+    (async () => {
+      const log = await getLifestyleLogByDate(rec.date);
+      setLifestyle(log);
+      if (aiDateRef.current !== rec.date) {
+        aiDateRef.current = rec.date;
+        await loadAiComment(rec, log);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex]);
 
   // ── AI comment ────────────────────────────────────────────────────────────
 
@@ -146,7 +177,7 @@ export default function DashboardPage() {
     if (isNaN(val) || val < 0) return;
     const updated = { ...sleep, steps: val };
     await upsertSleepRecord({ ...updated });
-    setSleep(updated);
+    setAllRecords(prev => prev.map((r, i) => i === currentIndex ? updated : r));
     setStepsEdit(false);
   }
 
@@ -224,9 +255,27 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-black tracking-tight" style={{ color: '#f0ebe6', letterSpacing: -1 }}>
           Nightly Genesis
         </h1>
-        <p className="text-[13px] mt-1 capitalize" style={{ color: '#7a6e6a' }}>
-          {sleep?.date ? fmtDate(sleep.date) : 'Aucune donnée — lance un import'}
-        </p>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            onClick={() => setCurrentIndex(i => Math.min(i + 1, allRecords.length - 1))}
+            disabled={currentIndex >= allRecords.length - 1}
+            className="text-base font-bold transition-opacity disabled:opacity-20 px-1"
+            style={{ color: '#7a6e6a' }}
+          >
+            ←
+          </button>
+          <p className="text-[13px] flex-1 text-center capitalize" style={{ color: '#7a6e6a' }}>
+            {sleep?.date ? fmtDate(sleep.date) : 'Aucune donnée — lance un import'}
+          </p>
+          <button
+            onClick={() => setCurrentIndex(i => Math.max(i - 1, 0))}
+            disabled={currentIndex <= 0}
+            className="text-base font-bold transition-opacity disabled:opacity-20 px-1"
+            style={{ color: '#7a6e6a' }}
+          >
+            →
+          </button>
+        </div>
       </section>
 
       {sleep ? (
@@ -496,7 +545,7 @@ export default function DashboardPage() {
         visible={formOpen}
         initial={lifestyle}
         todaySteps={sleep?.steps ?? 0}
-        onSave={async log => { await upsertLifestyleLog(log); setLifestyle(await getTodayLifestyleLog()); }}
+        onSave={async log => { await upsertLifestyleLog(log); setLifestyle(await getLifestyleLogByDate(sleep?.date ?? '')); }}
         onClose={() => setFormOpen(false)}
       />
     </div>
