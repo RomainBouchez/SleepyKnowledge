@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import Navigation from '@/components/Navigation';
+import CloudSyncInit from '@/components/CloudSyncInit';
 
 export const metadata: Metadata = {
   title: 'SleepIQ',
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </main>
         {/* Fixed bottom navigation */}
+        <CloudSyncInit />
         <Navigation />
       </body>
     </html>
