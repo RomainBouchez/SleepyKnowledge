@@ -4,8 +4,9 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
+import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
-import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates } from '@/lib/db';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ export default function ImportPage() {
   const [dbLoading, setDbLoading] = useState(true);
   const [dbLimit, setDbLimit] = useState(30);
   const [selected, setSelected] = useState<SleepRecord | null>(null);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   // Selection & deletion
   const [selectionMode, setSelectionMode] = useState(false);
@@ -203,10 +205,21 @@ export default function ImportPage() {
     const total = parsed.sleepRecords.length;
     let count = 0;
 
+    // Pre-fetch existing records for overlap dates to preserve the best steps value
+    const existingByDate = new Map<string, { steps: number }>();
+    await Promise.all(
+      overlapDates.map(async date => {
+        const rec = await getSleepRecordByDate(date);
+        if (rec) existingByDate.set(date, { steps: rec.steps });
+      })
+    );
+
     for (const record of parsed.sleepRecords) {
       // Skip records with zero sleep score and zero duration (no data)
       if (record.sleep_score === 0 && record.duration_min === 0) continue;
-      await upsertSleepRecord({ ...record, imported_at: now });
+      const existing = existingByDate.get(record.date);
+      const steps = existing ? Math.max(existing.steps, record.steps) : record.steps;
+      await upsertSleepRecord({ ...record, steps, imported_at: now });
       count++;
       setProgress(Math.round((count / total) * 100));
     }
@@ -461,6 +474,12 @@ export default function ImportPage() {
             ) : (
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => setShowManualForm(true)}
+                  className="bg-sl-accent text-white text-sm font-semibold px-3 py-1.5 rounded-lg hover:bg-sl-accent/80 transition-colors"
+                >
+                  + Saisir
+                </button>
+                <button
                   onClick={() => loadDbRecords(dbLimit)}
                   className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
                 >
@@ -594,6 +613,16 @@ export default function ImportPage() {
       {selected && (
         <SleepDetailDrawer record={selected} onClose={() => setSelected(null)} />
       )}
+
+      {/* ── Formulaire saisie manuelle ── */}
+      <ManualNightForm
+        visible={showManualForm}
+        onSave={async (record) => {
+          await upsertSleepRecord(record);
+          loadDbRecords(dbLimit);
+        }}
+        onClose={() => setShowManualForm(false)}
+      />
 
       {/* ── Modale confirmation suppression ── */}
       {deleteConfirm && (

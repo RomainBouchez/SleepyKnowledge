@@ -63,6 +63,11 @@ export async function getExistingDates(): Promise<Set<string>> {
   return new Set(dates as string[]);
 }
 
+export async function getSleepRecordByDate(date: string): Promise<SleepRecord | null> {
+  const rec = await getDb().sleepRecords.where('date').equals(date).first();
+  return rec ?? null;
+}
+
 export async function getLatestSleepRecord(): Promise<SleepRecord | null> {
   const rec = await getDb().sleepRecords.orderBy('date').last();
   return rec ?? null;
