@@ -33,6 +33,8 @@ export default function ImportPage() {
   const [importedCount, setImportedCount] = useState(0);
   const [error, setError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [overlapDates, setOverlapDates] = useState<string[]>([]);
+  const [overwriteChecked, setOverwriteChecked] = useState(false);
 
   // DB viewer
   const [dbRecords, setDbRecords] = useState<SleepRecord[]>([]);
@@ -165,6 +167,16 @@ export default function ImportPage() {
 
       const result = parseMiFitnessZip(csvFiles);
       setProgress(100);
+
+      // Check overlap with existing DB records
+      const candidateDates = result.sleepRecords
+        .filter(r => !(r.sleep_score === 0 && r.duration_min === 0))
+        .map(r => r.date);
+      const allExisting = await getExistingDates();
+      const existing = candidateDates.filter(d => allExisting.has(d));
+      setOverlapDates(existing);
+      setOverwriteChecked(false);
+
       setParsed(result);
       setStep('preview');
 
@@ -341,6 +353,33 @@ export default function ImportPage() {
               )}
             </div>
 
+            {overlapDates.length > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-400 text-lg leading-none">⚠️</span>
+                  <div>
+                    <p className="text-yellow-300 text-sm font-medium">
+                      {overlapDates.length} nuit{overlapDates.length > 1 ? 's' : ''} déjà en base
+                    </p>
+                    <p className="text-yellow-400/70 text-xs mt-0.5">
+                      Ces dates seront écrasées par les nouvelles données.
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overwriteChecked}
+                    onChange={e => setOverwriteChecked(e.target.checked)}
+                    className="w-4 h-4 accent-yellow-400"
+                  />
+                  <span className="text-yellow-300 text-sm">
+                    Je confirme l&apos;écrasement des {overlapDates.length} nuit{overlapDates.length > 1 ? 's' : ''} existante{overlapDates.length > 1 ? 's' : ''}
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 onClick={() => { setStep('idle'); setFile(null); setParsed(null); setPassword(''); }}
@@ -350,7 +389,8 @@ export default function ImportPage() {
               </button>
               <button
                 onClick={handleImport}
-                className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors"
+                disabled={overlapDates.length > 0 && !overwriteChecked}
+                className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Importer {parsed.stats.totalSleep} nuits
               </button>
