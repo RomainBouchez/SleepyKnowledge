@@ -209,7 +209,7 @@ export default function PatternsPage() {
             </>
           )}
         </ChartCard>
-      ))}
+      })}
 
       {/* ── Top factors ────────────────────────────────────────────── */}
       {topFactors.length > 0 && (
