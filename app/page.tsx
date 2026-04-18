@@ -5,15 +5,18 @@ import LifestyleForm from '@/components/LifestyleForm';
 import {
   getSleepRecords, getLatestSleepRecord, getTodayLifestyleLog,
   upsertLifestyleLog, saveAiInsight, getAiInsight, upsertSleepRecord,
+  getLifestyleLogByDate,
 } from '@/lib/db';
 import { fetchMorningScore } from '@/lib/claude-client';
 import type { SleepRecord, LifestyleLog } from '@/lib/types';
 
 const fmtDur  = (m: number) => `${Math.floor(m / 60)}h${m % 60 > 0 ? String(m % 60).padStart(2, '0') : ''}`;
 const pct     = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
-const fmtDate = (d?: string) => d
-  ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
-  : '';
+const fmtDate = (d?: string) => {
+  if (!d) return '';
+  const dateOnly = d.substring(0, 10);
+  return new Date(dateOnly + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+};
 
 // Profond=4 (petit/sombre) → Léger=3 → REM=2 → Éveillé=5 (grand/jaune)
 const ARCH_STAGE: Record<number, { color: string; height: number }> = {
@@ -70,6 +73,8 @@ function glass(radius = 22, tint = 0.08, border = 0.12): React.CSSProperties {
 
 export default function DashboardPage() {
   const [ready,       setReady]       = useState(false);
+  const [allRecords,  setAllRecords]  = useState<SleepRecord[]>([]);
+  const [currentIdx,  setCurrentIdx]  = useState(-1);
   const [sleep,       setSleep]       = useState<SleepRecord | null>(null);
   const [lifestyle,   setLifestyle]   = useState<LifestyleLog | null>(null);
   const [aiComment,   setAiComment]   = useState('');
@@ -102,14 +107,17 @@ export default function DashboardPage() {
   }, [ready]);
 
   const loadData = useCallback(async () => {
-    const [latestSleep, todayLog, allRecords] = await Promise.all([
-      getLatestSleepRecord(), getTodayLifestyleLog(), getSleepRecords(14),
+    const [latestSleep, todayLog, records] = await Promise.all([
+      getLatestSleepRecord(), getTodayLifestyleLog(), getSleepRecords(60),
     ]);
+    setAllRecords(records);
+    const idx = records.length > 0 ? records.length - 1 : -1;
+    setCurrentIdx(idx);
     setSleep(latestSleep);
     setLifestyle(todayLog);
-    if (allRecords.length >= 2) {
-      const recent = allRecords.slice(-7);
-      const prev   = allRecords.slice(-14, -7);
+    if (records.length >= 2) {
+      const recent = records.slice(-7);
+      const prev   = records.slice(-14, -7);
       if (recent.length && prev.length) {
         const avg = (arr: SleepRecord[], k: keyof SleepRecord) =>
           arr.reduce((s, r) => s + Number(r[k]), 0) / arr.length;
@@ -118,6 +126,20 @@ export default function DashboardPage() {
     }
     if (latestSleep) await loadAiComment(latestSleep, todayLog);
   }, []);
+
+  const navigateDay = useCallback(async (dir: -1 | 1) => {
+    const newIdx = currentIdx + dir;
+    if (newIdx < 0 || newIdx >= allRecords.length) return;
+    aborted.current = false;
+    setCurrentIdx(newIdx);
+    setExpanded(null);
+    const rec = allRecords[newIdx];
+    setSleep(rec);
+    setAiComment('');
+    const log = await getLifestyleLogByDate(rec.date);
+    setLifestyle(log);
+    await loadAiComment(rec, log);
+  }, [currentIdx, allRecords]);
 
   async function loadAiComment(sleepRec: SleepRecord, log: LifestyleLog | null) {
     const cached = await getAiInsight(sleepRec.date, 'morning_score');
@@ -251,7 +273,21 @@ export default function DashboardPage() {
                   <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ff6b35', boxShadow: '0 0 8px #ff6b35' }} />
                   <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.16em', color: '#ff6b35', textTransform: 'uppercase' }}>Nightly Genesis</span>
                 </div>
-                <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.45)', fontFamily: 'ui-monospace, Menlo, monospace' }}>{dateStr}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); navigateDay(-1); }}
+                    disabled={currentIdx <= 0}
+                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx <= 0 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx <= 0 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', fontSize: 13, cursor: currentIdx <= 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    aria-label="Jour précédent"
+                  >‹</button>
+                  <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.55)', fontFamily: 'ui-monospace, Menlo, monospace', minWidth: 80, textAlign: 'center' }}>{dateStr}</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); navigateDay(1); }}
+                    disabled={currentIdx >= allRecords.length - 1}
+                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx >= allRecords.length - 1 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx >= allRecords.length - 1 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', fontSize: 13, cursor: currentIdx >= allRecords.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    aria-label="Jour suivant"
+                  >›</button>
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <ScoreRing score={score} size={124} stroke={8} />
