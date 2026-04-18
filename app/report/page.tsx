@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ClipboardList } from 'lucide-react';
 import {
   getSleepRecords, getLifestyleLogs,
   getLatestWeeklyReports, getAiInsight, saveAiInsight,
@@ -68,7 +69,7 @@ export default function ReportPage() {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-xl font-bold text-sl-white">Rapport hebdo 📋</h1>
+          <h1 className="text-xl font-bold text-sl-white flex items-center gap-2">Rapport hebdo <ClipboardList size={20} strokeWidth={2} /></h1>
           <p className="text-[11px] text-sl-muted mt-0.5">
             {isMonday() ? 'Auto-généré chaque lundi' : 'Disponible le lundi matin'}
           </p>
@@ -91,7 +92,7 @@ export default function ReportPage() {
         </div>
       ) : reports.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
-          <span className="text-5xl mb-4">📋</span>
+          <ClipboardList size={48} strokeWidth={1.5} className="mb-4" style={{ color: '#7a6e6a' }} />
           <p className="text-sl-white font-semibold text-base mb-2">Aucun rapport pour l'instant</p>
           <p className="text-sl-gray text-sm leading-relaxed">
             Les rapports sont générés automatiquement chaque lundi.<br />

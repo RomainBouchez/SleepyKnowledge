@@ -1,6 +1,11 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  FolderOpen, Lock, Settings, HardDrive, CheckCircle2,
+  AlertTriangle, Database, Check, RefreshCw, Moon, Dumbbell,
+  Footprints, Clock, Waves, Brain,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
@@ -303,7 +308,7 @@ export default function ImportPage() {
                   : 'border-sl-border hover:border-sl-accent/50 bg-sl-card'}
               `}
             >
-              <div className="text-4xl mb-3">📦</div>
+              <FolderOpen size={40} strokeWidth={1.5} className="mb-3" style={{ color: '#ff6b35' }} />
               <p className="text-white font-medium mb-1">Dépose ton fichier Mi Fitness ici</p>
               <p className="text-sl-muted text-sm">ZIP ou DB, ou clique pour sélectionner</p>
               <input
@@ -327,7 +332,7 @@ export default function ImportPage() {
         {step === 'password' && (
           <div className="bg-sl-card rounded-2xl p-6 space-y-5">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🔐</span>
+              <Lock size={24} strokeWidth={1.8} style={{ color: '#ff6b35', flexShrink: 0 }} />
               <div>
                 <p className="text-white font-medium">{file?.name}</p>
                 <p className="text-sl-muted text-xs">
@@ -373,7 +378,7 @@ export default function ImportPage() {
         {/* ── STEP: parsing ── */}
         {step === 'parsing' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-4">
-            <div className="text-3xl animate-pulse">⚙️</div>
+            <Settings size={32} strokeWidth={1.5} className="animate-spin mb-1" style={{ color: '#ff6b35' }} />
             <p className="text-white font-medium">Déchiffrement en cours…</p>
             <ProgressBar value={progress} />
             <p className="text-sl-muted text-sm">{progress}%</p>
@@ -387,8 +392,8 @@ export default function ImportPage() {
               <h2 className="text-white font-semibold text-lg">Aperçu des données</h2>
 
               <div className="grid grid-cols-2 gap-3">
-                <StatBox label="Nuits de sommeil" value={parsed.stats.totalSleep} icon="🌙" />
-                <StatBox label="Séances sport" value={parsed.stats.totalSport} icon="🏋️" />
+                <StatBox label="Nuits de sommeil" value={parsed.stats.totalSleep} icon={<Moon size={22} strokeWidth={1.5} style={{ color: '#ff6b35' }} />} />
+                <StatBox label="Séances sport" value={parsed.stats.totalSport} icon={<Dumbbell size={22} strokeWidth={1.5} style={{ color: '#ff9955' }} />} />
               </div>
 
               <div className="bg-sl-bg rounded-xl p-4">
@@ -413,7 +418,7 @@ export default function ImportPage() {
             {overlapDates.length > 0 && (
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
                 <div className="flex items-start gap-2">
-                  <span className="text-yellow-400 text-lg leading-none">⚠️</span>
+                  <AlertTriangle size={18} strokeWidth={2} style={{ color: '#facc15', flexShrink: 0 }} />
                   <div>
                     <p className="text-yellow-300 text-sm font-medium">
                       {overlapDates.length} nuit{overlapDates.length > 1 ? 's' : ''} déjà en base
@@ -458,7 +463,7 @@ export default function ImportPage() {
         {/* ── STEP: importing ── */}
         {step === 'importing' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-4">
-            <div className="text-3xl animate-pulse">💾</div>
+            <HardDrive size={32} strokeWidth={1.5} className="animate-pulse mb-1" style={{ color: '#ff6b35' }} />
             <p className="text-white font-medium">Import en cours…</p>
             <ProgressBar value={progress} />
             <p className="text-sl-muted text-sm">{progress}%</p>
@@ -468,7 +473,7 @@ export default function ImportPage() {
         {/* ── STEP: done ── */}
         {step === 'done' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-5">
-            <div className="text-5xl">✅</div>
+            <CheckCircle2 size={52} strokeWidth={1.5} style={{ color: '#4caf78' }} />
             <div>
               <p className="text-white font-bold text-xl mb-1">Import terminé !</p>
               <p className="text-sl-muted text-sm">
@@ -525,9 +530,9 @@ export default function ImportPage() {
                 </button>
                 <button
                   onClick={() => loadDbRecords(dbLimit)}
-                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
+                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity flex items-center gap-1"
                 >
-                  ↻ Rafraîchir
+                  <RefreshCw size={13} strokeWidth={2} /> Rafraîchir
                 </button>
                 {dbRecords.length > 0 && (
                   <button
@@ -545,7 +550,7 @@ export default function ImportPage() {
             <div className="text-center py-8 text-sl-muted text-sm">Chargement…</div>
           ) : dbRecords.length === 0 ? (
             <div className="bg-sl-card rounded-2xl p-8 text-center">
-              <div className="text-3xl mb-3">🗃️</div>
+              <Database size={32} strokeWidth={1.5} className="mb-3" style={{ color: '#7a6e6a' }} />
               <p className="text-sl-muted text-sm">Aucune donnée en base.<br />Importe un fichier ZIP ou DB pour commencer.</p>
             </div>
           ) : (
@@ -570,7 +575,7 @@ export default function ImportPage() {
                     {selectionMode && (
                       <div className="flex items-center justify-center">
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checkedDates.has(r.date) ? 'bg-sl-accent border-sl-accent' : 'border-sl-border'}`}>
-                          {checkedDates.has(r.date) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                          {checkedDates.has(r.date) && <Check size={10} strokeWidth={3} style={{ color: '#fff' }} />}
                         </div>
                       </div>
                     )}
@@ -720,10 +725,10 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-function StatBox({ label, value, icon }: { label: string; value: number; icon: string }) {
+function StatBox({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   return (
     <div className="bg-sl-bg rounded-xl p-4 text-center">
-      <div className="text-2xl mb-1">{icon}</div>
+      <div className="flex justify-center mb-1">{icon}</div>
       <div className="text-white font-bold text-xl">{value}</div>
       <div className="text-sl-muted text-xs">{label}</div>
     </div>
@@ -879,10 +884,10 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
 
           {/* ── Autres métriques ── */}
           <div className="grid grid-cols-2 gap-3">
-            <MetricTile icon="👟" label="Pas" value={r.steps.toLocaleString('fr-FR')} />
-            <MetricTile icon="⏱️" label="Éveillé" value={`${r.awake_min} min`} />
-            <MetricTile icon="🌊" label="Sommeil profond" value={`${Math.round((r.deep_sleep_min / totalPhases) * 100)}%`} />
-            <MetricTile icon="🌀" label="REM" value={`${Math.round((r.rem_sleep_min / totalPhases) * 100)}%`} />
+          <MetricTile icon={<Footprints size={20} strokeWidth={1.8} />} label="Pas" value={r.steps.toLocaleString('fr-FR')} />
+          <MetricTile icon={<Clock size={20} strokeWidth={1.8} />} label="Éveillé" value={`${r.awake_min} min`} />
+          <MetricTile icon={<Waves size={20} strokeWidth={1.8} />} label="Sommeil profond" value={`${Math.round((r.deep_sleep_min / totalPhases) * 100)}%`} />
+          <MetricTile icon={<Brain size={20} strokeWidth={1.8} />} label="REM" value={`${Math.round((r.rem_sleep_min / totalPhases) * 100)}%`} />
           </div>
 
           {/* Bouton fermer */}
@@ -910,10 +915,10 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
   );
 }
 
-function MetricTile({ icon, label, value }: { icon: string; label: string; value: string }) {
+function MetricTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="bg-sl-card rounded-xl p-4 flex items-center gap-3">
-      <span className="text-xl">{icon}</span>
+      <span style={{ color: '#ff9955', flexShrink: 0 }}>{icon}</span>
       <div>
         <p className="text-white font-semibold text-sm">{value}</p>
         <p className="text-sl-muted text-xs">{label}</p>

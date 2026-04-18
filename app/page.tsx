@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Settings, X, Moon, Sun, Check, Pencil, ChevronRight, ChevronLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import LifestyleForm from '@/components/LifestyleForm';
 import {
   getSleepRecords, getLatestSleepRecord, getTodayLifestyleLog,
@@ -81,6 +82,7 @@ export default function DashboardPage() {
   const [loadingAi,   setLoadingAi]   = useState(false);
   const [syncing,     setSyncing]     = useState(false);
   const [formOpen,    setFormOpen]    = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [trend,       setTrend]       = useState<{ score: number; dur: number } | null>(null);
   const [stepsEdit,   setStepsEdit]   = useState(false);
   const [stepsInput,  setStepsInput]  = useState('');
@@ -239,28 +241,28 @@ export default function DashboardPage() {
             <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.35)' }} />
             <span style={{ fontSize: 12.5, color: '#fff8f0', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dateStr}</span>
           </div>
-          {trend && (
-            <div style={{ fontSize: 11, fontWeight: 700, color: trend.score >= 0 ? '#7ee2a8' : '#e89383', marginTop: 3 }}>
-              {trend.score >= 0 ? '▲' : '▼'} {Math.abs(Math.round(trend.score))} pts vs semaine préc.
+            {trend && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: trend.score >= 0 ? '#7ee2a8' : '#e89383', marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
+              {trend.score >= 0
+                ? <TrendingUp size={12} strokeWidth={2.5} />
+                : <TrendingDown size={12} strokeWidth={2.5} />}
+              {Math.abs(Math.round(trend.score))} pts vs semaine préc.
             </div>
           )}
         </div>
       </div>
 
       {/* Page content */}
-      <div style={{ position: 'relative', zIndex: 1 }} className="px-4 pt-3 pb-32 max-w-lg mx-auto">
+      <div style={{ position: 'relative', zIndex: 1 }} className="px-4 pb-32 max-w-lg mx-auto">
 
         {/* Header */}
-        <header className="flex items-center justify-between mb-5 pt-2">
+        <header className="flex items-center justify-between mb-4 pt-1">
           <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.18em', color: '#ff6b35', textTransform: 'uppercase', textShadow: '0 0 12px rgba(255,107,53,0.4)' }}>Sleepy</span>
           <button
-            onClick={handleSync}
-            disabled={syncing}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 999, background: 'rgba(255,107,53,0.12)', border: '1px solid rgba(255,107,53,0.32)', color: '#ff6b35', fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: 'pointer', opacity: syncing ? 0.5 : 1 }}>
-            {syncing
-              ? <span className="w-3 h-3 border border-t-transparent rounded-full animate-spin" style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
-              : '↓'}
-            {syncing ? 'Sync…' : 'Import'}
+            onClick={() => setSettingsOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 12, background: 'rgba(255,107,53,0.10)', border: '1px solid rgba(255,107,53,0.28)', color: '#ff6b35', cursor: 'pointer' }}
+            aria-label="Paramètres">
+            <Settings size={16} strokeWidth={2} />
           </button>
         </header>
 
@@ -277,16 +279,16 @@ export default function DashboardPage() {
                   <button
                     onClick={e => { e.stopPropagation(); navigateDay(-1); }}
                     disabled={currentIdx <= 0}
-                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx <= 0 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx <= 0 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', fontSize: 13, cursor: currentIdx <= 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx <= 0 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx <= 0 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', cursor: currentIdx <= 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     aria-label="Jour précédent"
-                  >‹</button>
+                  ><ChevronLeft size={14} strokeWidth={2} /></button>
                   <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.55)', fontFamily: 'ui-monospace, Menlo, monospace', minWidth: 80, textAlign: 'center' }}>{dateStr}</span>
                   <button
                     onClick={e => { e.stopPropagation(); navigateDay(1); }}
                     disabled={currentIdx >= allRecords.length - 1}
-                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx >= allRecords.length - 1 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx >= allRecords.length - 1 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', fontSize: 13, cursor: currentIdx >= allRecords.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                    style={{ width: 24, height: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.12)', background: currentIdx >= allRecords.length - 1 ? 'transparent' : 'rgba(255,255,255,0.08)', color: currentIdx >= allRecords.length - 1 ? 'rgba(240,235,230,0.2)' : 'rgba(240,235,230,0.7)', cursor: currentIdx >= allRecords.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                     aria-label="Jour suivant"
-                  >›</button>
+                  ><ChevronRight size={14} strokeWidth={2} /></button>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -318,7 +320,7 @@ export default function DashboardPage() {
               <div style={{ padding: '12px 14px', ...glass(18, 0.07) }}>
                 <SLabel>Fréquence Cardiaque</SLabel>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10, marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,235,230,0.55)' }}>{hrAvg > 5 ? hrAvg - 8 : '—'}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,235,230,0.55)' }}>{hrAvg > 5 ? hrAvg - 8 : '\u2014'}</span>
                   <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'linear-gradient(90deg, rgba(255,107,53,0.2), #ff6b35)', boxShadow: '0 0 8px rgba(255,107,53,0.4)' }} />
                   <span style={{ fontSize: 10, fontWeight: 700, color: '#ff6b35' }}>{hrAvg > 0 ? hrAvg + 12 : '—'}</span>
                 </div>
@@ -336,7 +338,11 @@ export default function DashboardPage() {
                   {durMin >= 480 ? '+Objectif' : durMin >= 420 ? '≈ Objectif' : '− Objectif'}
                 </div>
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'rgba(240,235,230,0.4)' }}>
-                  <span>🌙 {sleep.sleep_start}</span><span>→</span><span>☀ {sleep.sleep_end}</span>
+                  <Moon size={10} strokeWidth={2} style={{ flexShrink: 0 }} />
+                  <span>{sleep.sleep_start}</span>
+                  <span>→</span>
+                  <Sun size={10} strokeWidth={2} style={{ flexShrink: 0 }} />
+                  <span>{sleep.sleep_end}</span>
                 </div>
               </div>
             </div>
@@ -424,7 +430,9 @@ export default function DashboardPage() {
           </>
         ) : (
           <div className="flex flex-col items-center py-20 text-center">
-            <div style={{ width: 64, height: 64, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, marginBottom: 20, ...glass(20, 0.08) }}>🌙</div>
+            <div style={{ width: 64, height: 64, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20, color: '#ff6b35', ...glass(20, 0.08) }}>
+              <Moon size={32} strokeWidth={1.5} />
+            </div>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(240,235,230,0.5)', margin: 0 }}>
               Aucune donnée de sommeil.<br />Appuie sur Import pour commencer.
             </p>
@@ -435,8 +443,8 @@ export default function DashboardPage() {
         <div
           onClick={() => setFormOpen(true)}
           style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', ...glass(20, 0.06, 0.10) }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, fontSize: 16, background: lifestyle ? 'rgba(76,175,120,0.15)' : 'rgba(255,107,53,0.15)', border: `1px solid ${lifestyle ? 'rgba(76,175,120,0.3)' : 'rgba(255,107,53,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: lifestyle ? '#4caf78' : '#ff6b35' }}>
-            {lifestyle ? '✓' : '✎'}
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: lifestyle ? 'rgba(76,175,120,0.15)' : 'rgba(255,107,53,0.15)', border: `1px solid ${lifestyle ? 'rgba(76,175,120,0.3)' : 'rgba(255,107,53,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: lifestyle ? '#4caf78' : '#ff6b35' }}>
+            {lifestyle ? <Check size={16} strokeWidth={2.5} /> : <Pencil size={15} strokeWidth={2} />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: '#f8f3ee' }}>
@@ -446,7 +454,7 @@ export default function DashboardPage() {
               {lifestyle ? 'Appuie pour modifier' : 'Caféine · sport · repas · écrans — < 30 s'}
             </div>
           </div>
-          <span style={{ color: 'rgba(240,235,230,0.3)', fontSize: 16 }}>›</span>
+          <ChevronRight size={16} strokeWidth={2} style={{ color: 'rgba(240,235,230,0.3)', flexShrink: 0 }} />
         </div>
       </div>
 
@@ -480,7 +488,147 @@ export default function DashboardPage() {
         onSave={async log => { await upsertLifestyleLog(log); setLifestyle(await getTodayLifestyleLog()); }}
         onClose={() => setFormOpen(false)}
       />
+
+      {/* Settings drawer */}
+      {settingsOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => setSettingsOpen(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: 'absolute', top: 0, right: 0, bottom: 0,
+            width: 'min(78vw, 320px)',
+            background: 'rgba(14, 11, 10, 0.96)',
+            backdropFilter: 'blur(40px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+            borderLeft: '1px solid rgba(255,255,255,0.07)',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '-12px 0 48px rgba(0,0,0,0.6)',
+          }}>
+            {/* Panel header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Settings size={16} strokeWidth={2} style={{ color: '#ff6b35', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 900, letterSpacing: '0.18em', color: '#f0ebe6', textTransform: 'uppercase' }}>Paramètres</span>
+              </div>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                style={{ width: 30, height: 30, borderRadius: 10, border: '1px solid rgba(255,255,255,0.10)', background: 'rgba(255,255,255,0.05)', color: 'rgba(240,235,230,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+
+            {/* Sync content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <SettingsSyncPanel />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function SettingsSyncPanel() {
+  const [deviceId, setDeviceId] = useState('');
+  const [input, setInput]       = useState('');
+  const [syncing, setSyncing]   = useState(false);
+  const [msg, setMsg]           = useState('');
+
+  useEffect(() => {
+    import('@/lib/device').then(m => setDeviceId(m.getDeviceId()));
+  }, []);
+
+  function copyId() {
+    navigator.clipboard.writeText(deviceId);
+    setMsg('Copié !');
+    setTimeout(() => setMsg(''), 2000);
+  }
+
+  function applyId() {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    localStorage.setItem('sk_device_id', trimmed);
+    setDeviceId(trimmed);
+    setInput('');
+    setMsg('ID appliqué — sync en cours…');
+    handleSyncCloud();
+  }
+
+  async function handleSyncCloud() {
+    setSyncing(true);
+    setMsg('Sync en cours…');
+    try {
+      const { syncFromCloud } = await import('@/lib/db');
+      await syncFromCloud();
+      setMsg('Sync terminé — rechargez la page');
+    } catch {
+      setMsg('Erreur sync');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const sectionLabel: React.CSSProperties = { fontSize: 9.5, fontWeight: 800, letterSpacing: '0.22em', color: 'rgba(240,235,230,0.4)', textTransform: 'uppercase', marginBottom: 10 };
+  const card: React.CSSProperties = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: '14px 16px' };
+
+  return (
+    <>
+      <div>
+        <p style={sectionLabel}>Sync &amp; Appareils</p>
+
+        {/* Device ID */}
+        <div style={{ ...card, marginBottom: 12 }}>
+          <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.16em', color: 'rgba(240,235,230,0.5)', textTransform: 'uppercase', marginBottom: 10, marginTop: 0 }}>Ton Device ID</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <code style={{ flex: 1, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: 11, color: 'rgba(240,235,230,0.75)', wordBreak: 'break-all', fontFamily: 'ui-monospace, Menlo, monospace', lineHeight: 1.4 }}>
+              {deviceId || '…'}
+            </code>
+            <button
+              onClick={copyId}
+              style={{ flexShrink: 0, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,107,53,0.14)', border: '1px solid rgba(255,107,53,0.30)', color: '#ff6b35', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              Copier
+            </button>
+          </div>
+          <p style={{ fontSize: 10.5, color: 'rgba(240,235,230,0.35)', marginTop: 8, marginBottom: 0 }}>
+            Même ID sur tous tes appareils = mêmes données.
+          </p>
+        </div>
+
+        {/* Paste ID */}
+        <div style={{ ...card, marginBottom: 12 }}>
+          <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.16em', color: 'rgba(240,235,230,0.5)', textTransform: 'uppercase', marginBottom: 10, marginTop: 0 }}>Coller un ID existant</p>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Colle ici le Device ID de ton autre appareil…"
+            style={{ width: '100%', background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'rgba(240,235,230,0.8)', fontFamily: 'ui-monospace, Menlo, monospace', resize: 'none', height: 72, outline: 'none', boxSizing: 'border-box', display: 'block' }}
+          />
+          <button
+            onClick={applyId}
+            disabled={!input.trim() || syncing}
+            style={{ marginTop: 10, width: '100%', padding: '11px 0', borderRadius: 10, background: 'rgba(255,107,53,0.14)', border: '1px solid rgba(255,107,53,0.30)', color: '#ff6b35', fontWeight: 800, fontSize: 13, cursor: !input.trim() || syncing ? 'not-allowed' : 'pointer', opacity: !input.trim() || syncing ? 0.45 : 1 }}>
+            Appliquer et synchroniser
+          </button>
+        </div>
+
+        {/* Force sync */}
+        <button
+          onClick={handleSyncCloud}
+          disabled={syncing}
+          style={{ width: '100%', padding: '12px 0', borderRadius: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: syncing ? 'rgba(240,235,230,0.4)' : 'rgba(240,235,230,0.7)', fontWeight: 800, fontSize: 13, cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          {syncing && <span className="w-3.5 h-3.5 border border-t-transparent rounded-full animate-spin" style={{ borderColor: 'rgba(240,235,230,0.6)', borderTopColor: 'transparent', flexShrink: 0 }} />}
+          {syncing ? 'Sync…' : 'Forcer la synchronisation'}
+        </button>
+
+        {msg && (
+          <p style={{ textAlign: 'center', color: '#ff6b35', fontSize: 13, fontWeight: 700, marginTop: 14, marginBottom: 0 }}>{msg}</p>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -534,7 +682,12 @@ function DTrend({ label, delta, up }: { label: string; delta: string; up: boolea
   const color = up ? '#4caf78' : '#e89383';
   return (
     <div style={{ flex: 1, padding: '8px 10px', borderRadius: 12, background: up ? 'rgba(76,175,120,0.08)' : 'rgba(232,147,131,0.08)', border: `1px solid ${up ? 'rgba(76,175,120,0.22)' : 'rgba(232,147,131,0.22)'}` }}>
-      <div style={{ fontSize: 11.5, fontWeight: 800, color, letterSpacing: -0.2 }}>{delta}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color, letterSpacing: -0.2, display: 'flex', alignItems: 'center', gap: 3 }}>
+        {up
+          ? <TrendingUp size={11} strokeWidth={2.5} />
+          : <TrendingDown size={11} strokeWidth={2.5} />}
+        {delta}
+      </div>
       <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(240,235,230,0.4)', textTransform: 'uppercase', marginTop: 1 }}>{label}</div>
     </div>
   );

@@ -1,17 +1,18 @@
 'use client';
 
 import { CSSProperties, useEffect, useRef, useState } from 'react';
+import { Bot, MoreHorizontal, ArrowUp, Moon, BarChart2, Coffee, Zap, Calendar, ChevronRight } from 'lucide-react';
 import { getSleepRecords, getLifestyleLogs } from '@/lib/db';
 import { buildSleepContext, streamChatResponse } from '@/lib/claude-client';
 import MarkdownContent from '@/components/MarkdownContent';
 import type { ChatMessage, SleepRecord } from '@/lib/types';
 
 const SUGGESTIONS = [
-  { q: "Pourquoi j'ai mal dormi cette semaine ?",    icon: '◐', accent: '#ff6b35' },
-  { q: "Quel est mon meilleur pattern de sommeil ?", icon: '◉', accent: '#ffb040' },
-  { q: "La caféine impacte-t-elle mon deep sleep ?", icon: '☕', accent: '#cc3300' },
-  { q: "Est-ce que le sport le soir me nuit ?",      icon: '⚡', accent: '#ff9955' },
-  { q: "Quels jours ai-je le mieux dormi ce mois ?", icon: '◎', accent: '#ff9955' },
+  { q: "Pourquoi j'ai mal dormi cette semaine ?",    Icon: Moon,       accent: '#ff6b35' },
+  { q: "Quel est mon meilleur pattern de sommeil ?", Icon: BarChart2,  accent: '#ffb040' },
+  { q: "La caféine impacte-t-elle mon deep sleep ?", Icon: Coffee,     accent: '#cc3300' },
+  { q: "Est-ce que le sport le soir me nuit ?",      Icon: Zap,        accent: '#ff9955' },
+  { q: "Quels jours ai-je le mieux dormi ce mois ?", Icon: Calendar,   accent: '#ff9955' },
 ];
 
 let _id = 0;
@@ -140,8 +141,8 @@ export default function ChatPage() {
             background: 'linear-gradient(135deg, #ff6b35, #cc3300)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 4px 16px rgba(255,107,53,0.5), inset 0 1px 0 rgba(255,220,180,0.5)',
-            fontSize: 14, fontWeight: 800, color: '#fff',
-          }}>◈</div>
+            color: '#fff',
+          }}><Bot size={16} strokeWidth={2} /></div>
           <div className="flex-1 min-w-0">
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', color: '#ff6b35', textTransform: 'uppercase' }}>
               Sleepy · Coach
@@ -155,8 +156,8 @@ export default function ChatPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(255,255,255,0.06)',
             border: '1px solid rgba(255,255,255,0.08)',
-            color: 'rgba(240,235,230,0.5)', fontSize: 18,
-          }}>⋯</div>
+            color: 'rgba(240,235,230,0.5)',
+          }}><MoreHorizontal size={18} strokeWidth={1.8} /></div>
         </div>
       </div>
 
@@ -230,17 +231,17 @@ export default function ChatPage() {
                     disabled={!contextReady}
                     className="flex items-center gap-3 text-left w-full disabled:opacity-40"
                     style={{ ...glass(0.05, 0.08, 18), padding: '12px 14px', border: 'none', cursor: contextReady ? 'pointer' : 'default' }}>
-                    <div style={{
+                    <div                     style={{
                       width: 34, height: 34, borderRadius: 11, flexShrink: 0,
                       background: `${s.accent}22`,
                       border: `1px solid ${s.accent}44`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 15, color: s.accent,
-                    }}>{s.icon}</div>
+                      color: s.accent,
+                    }}><s.Icon size={16} strokeWidth={2} /></div>
                     <span style={{ flex: 1, fontSize: 13.5, fontWeight: 500, color: '#f0ebe6', lineHeight: 1.35 }}>
                       {s.q}
                     </span>
-                    <span style={{ color: 'rgba(240,235,230,0.3)', fontSize: 14, flexShrink: 0 }}>›</span>
+                    <ChevronRight size={14} strokeWidth={2} style={{ color: 'rgba(240,235,230,0.3)', flexShrink: 0 }} />
                   </button>
                 ))}
               </div>
@@ -278,12 +279,12 @@ export default function ChatPage() {
             style={{
               width: 40, height: 40, borderRadius: '50%', border: 'none', cursor: 'pointer', marginBottom: 2,
               background: 'linear-gradient(135deg, #ff8c00, #cc3300)',
-              color: '#fff', fontSize: 18, fontWeight: 800,
+              color: '#fff',
               boxShadow: '0 6px 18px rgba(255,107,53,0.55), inset 0 1px 0 rgba(255,220,180,0.5)',
             }}>
             {streaming
               ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              : '↑'}
+              : <ArrowUp size={18} strokeWidth={2.5} />}
           </button>
         </div>
       </div>
