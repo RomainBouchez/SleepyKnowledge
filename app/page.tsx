@@ -1,155 +1,104 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import SleepScoreGauge from '@/components/SleepScoreGauge';
-import MetricCard from '@/components/MetricCard';
 import LifestyleForm from '@/components/LifestyleForm';
 import {
-  getSleepRecords, getLifestyleLogByDate,
+  getSleepRecords, getLatestSleepRecord, getTodayLifestyleLog,
   upsertLifestyleLog, saveAiInsight, getAiInsight, upsertSleepRecord,
 } from '@/lib/db';
-import { fetchMorningScore, buildSleepContext } from '@/lib/claude-client';
+import { fetchMorningScore } from '@/lib/claude-client';
 import type { SleepRecord, LifestyleLog } from '@/lib/types';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmtDur  = (m: number) => `${Math.floor(m / 60)}h${m % 60 > 0 ? String(m % 60).padStart(2, '0') : ''}`;
 const pct     = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 const fmtDate = (d?: string) => d
-  ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+  ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
   : '';
 
-function localYesterdayStr(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// Sleep architect bar chart — generates a plausible pattern from phase mins
-function buildArchitectBars(
-  deepMin: number,
-  remMin: number,
-  lightMin: number,
-  awakeMin: number,
-  totalMin: number,
-): { color: string; height: number }[] {
+function buildArchitectBars(deepMin: number, remMin: number, lightMin: number, awakeMin: number): { color: string; height: number }[] {
   const bars: { color: string; height: number }[] = [];
-  const n = 22;
-
-  // Weights per bar: first 1/3 heavier on deep, last 1/3 heavier on REM
-  for (let i = 0; i < n; i++) {
-    const phase = i / n;
-    let color: string;
-    let height: number;
-
-    if (awakeMin > 0 && (i === 2 || i === 11 || i === 18)) {
-      // Awake spikes
-      color = '#ff6b35';
-      height = 55 + Math.random() * 20;
+  for (let i = 0; i < 28; i++) {
+    const phase = i / 28;
+    let color: string, height: number;
+    if (awakeMin > 0 && (i === 3 || i === 14 || i === 22)) {
+      color = '#ff6b35'; height = 48 + (i * 7 % 18);
     } else if (phase < 0.35 && deepMin > 0) {
-      // Early night: deep sleep dominant
-      color = '#cc3300';
-      height = 70 + Math.sin(i * 1.2) * 20;
+      color = '#cc3300'; height = 70 + Math.sin(i * 1.2) * 18;
     } else if (phase > 0.65 && remMin > 0) {
-      // Late night: REM dominant
-      color = '#ffb040';
-      height = 50 + Math.sin(i * 0.9) * 25;
+      color = '#ffb040'; height = 52 + Math.sin(i * 0.9) * 24;
     } else {
-      // Light sleep
-      color = '#ff9955';
-      height = 35 + Math.sin(i * 1.5) * 20;
+      color = '#ff9955'; height = 38 + Math.sin(i * 1.5) * 20;
     }
-
-    height = Math.min(100, Math.max(15, height));
-    bars.push({ color, height });
+    bars.push({ color, height: Math.min(100, Math.max(16, height)) });
   }
   return bars;
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+function glass(radius = 22, tint = 0.08, border = 0.12): React.CSSProperties {
+  return {
+    background: `rgba(255,255,255,${tint})`,
+    backdropFilter: 'blur(24px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+    border: `1px solid rgba(255,255,255,${border})`,
+    borderRadius: radius,
+    boxShadow: '0 1px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.1) inset, 0 8px 24px rgba(0,0,0,0.35)',
+  };
+}
 
 export default function DashboardPage() {
-  const [ready,        setReady]        = useState(false);
-  const [allRecords,   setAllRecords]   = useState<SleepRecord[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [lifestyle,    setLifestyle]    = useState<LifestyleLog | null>(null);
-  const [aiComment,    setAiComment]    = useState('');
-  const [loadingAi,    setLoadingAi]    = useState(false);
-  const [syncing,      setSyncing]      = useState(false);
-  const [formOpen,     setFormOpen]     = useState(false);
-  const [trend,        setTrend]        = useState<{ score: number; dur: number } | null>(null);
-  const [stepsEdit,    setStepsEdit]    = useState(false);
-  const [stepsInput,   setStepsInput]   = useState('');
-  const aborted   = useRef(false);
-  const aiDateRef = useRef<string | null>(null);
-
-  const sleep = allRecords[currentIndex] ?? null;
-
-  // ── Init ──────────────────────────────────────────────────────────────────
+  const [ready,       setReady]       = useState(false);
+  const [sleep,       setSleep]       = useState<SleepRecord | null>(null);
+  const [lifestyle,   setLifestyle]   = useState<LifestyleLog | null>(null);
+  const [aiComment,   setAiComment]   = useState('');
+  const [loadingAi,   setLoadingAi]   = useState(false);
+  const [syncing,     setSyncing]     = useState(false);
+  const [formOpen,    setFormOpen]    = useState(false);
+  const [trend,       setTrend]       = useState<{ score: number; dur: number } | null>(null);
+  const [stepsEdit,   setStepsEdit]   = useState(false);
+  const [stepsInput,  setStepsInput]  = useState('');
+  const [expanded,    setExpanded]    = useState<'architect' | 'observation' | null>(null);
+  const [heroVisible, setHeroVisible] = useState(true);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const aborted = useRef(false);
 
   useEffect(() => {
     aborted.current = false;
-    (async () => {
-      await loadData();
-      setReady(true);
-    })();
+    (async () => { await loadData(); setReady(true); })();
     return () => { aborted.current = true; };
   }, []);
 
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setHeroVisible(entry.intersectionRatio >= 0.5),
+      { threshold: [0, 0.25, 0.5, 0.75, 1] },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [ready]);
+
   const loadData = useCallback(async () => {
-    const records = await getSleepRecords(90); // oldest first from db
-    const newestFirst = records.slice().reverse();
-    setAllRecords(newestFirst);
-
-    // Default to yesterday's night; fall back to most recent
-    const yest = localYesterdayStr();
-    const idx  = newestFirst.findIndex(r => r.date === yest);
-    const startIdx = idx >= 0 ? idx : 0;
-    setCurrentIndex(startIdx);
-
-    // Trend: compare last 7 vs previous 7 nights
-    if (records.length >= 2) {
-      const recent = records.slice(-7);
-      const prev   = records.slice(-14, -7);
+    const [latestSleep, todayLog, allRecords] = await Promise.all([
+      getLatestSleepRecord(), getTodayLifestyleLog(), getSleepRecords(14),
+    ]);
+    setSleep(latestSleep);
+    setLifestyle(todayLog);
+    if (allRecords.length >= 2) {
+      const recent = allRecords.slice(-7);
+      const prev   = allRecords.slice(-14, -7);
       if (recent.length && prev.length) {
         const avg = (arr: SleepRecord[], k: keyof SleepRecord) =>
           arr.reduce((s, r) => s + Number(r[k]), 0) / arr.length;
-        setTrend({
-          score: avg(recent, 'sleep_score') - avg(prev, 'sleep_score'),
-          dur:   avg(recent, 'duration_min') - avg(prev, 'duration_min'),
-        });
+        setTrend({ score: avg(recent, 'sleep_score') - avg(prev, 'sleep_score'), dur: avg(recent, 'duration_min') - avg(prev, 'duration_min') });
       }
     }
-
-    const rec = newestFirst[startIdx];
-    if (rec) {
-      const log = await getLifestyleLogByDate(rec.date);
-      setLifestyle(log);
-      await loadAiComment(rec, log);
-    }
+    if (latestSleep) await loadAiComment(latestSleep, todayLog);
   }, []);
-
-  // Reload lifestyle + AI when navigating to a different night
-  useEffect(() => {
-    const rec = allRecords[currentIndex];
-    if (!rec || !ready) return;
-    (async () => {
-      const log = await getLifestyleLogByDate(rec.date);
-      setLifestyle(log);
-      if (aiDateRef.current !== rec.date) {
-        aiDateRef.current = rec.date;
-        await loadAiComment(rec, log);
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex]);
-
-  // ── AI comment ────────────────────────────────────────────────────────────
 
   async function loadAiComment(sleepRec: SleepRecord, log: LifestyleLog | null) {
     const cached = await getAiInsight(sleepRec.date, 'morning_score');
     if (cached) { setAiComment(cached.content); return; }
-
     setLoadingAi(true);
     try {
       const comment = await fetchMorningScore(sleepRec, log);
@@ -158,18 +107,13 @@ export default function DashboardPage() {
         await saveAiInsight({ date: sleepRec.date, type: 'morning_score', content: comment, generated_at: new Date().toISOString() });
       }
     } catch {
-      if (!aborted.current) setAiComment('Coach IA indisponible pour l\'instant.');
+      if (!aborted.current) setAiComment("Coach IA indisponible pour l'instant.");
     } finally {
       if (!aborted.current) setLoadingAi(false);
     }
   }
 
-  // ── Steps edit ────────────────────────────────────────────────────────────
-
-  function openStepsEdit() {
-    setStepsInput(String(sleep?.steps ?? 0));
-    setStepsEdit(true);
-  }
+  function openStepsEdit() { setStepsInput(String(sleep?.steps ?? 0)); setStepsEdit(true); }
 
   async function saveSteps() {
     if (!sleep) return;
@@ -177,411 +121,392 @@ export default function DashboardPage() {
     if (isNaN(val) || val < 0) return;
     const updated = { ...sleep, steps: val };
     await upsertSleepRecord({ ...updated });
-    setAllRecords(prev => prev.map((r, i) => i === currentIndex ? updated : r));
+    setSleep(updated);
     setStepsEdit(false);
   }
-
-  // ── Sync ──────────────────────────────────────────────────────────────────
 
   async function handleSync() {
     setSyncing(true);
     try {
-      const res = await fetch('/api/sync');
+      const res  = await fetch('/api/sync');
       const data = await res.json();
       if (!res.ok) { alert(`Erreur sync: ${data.error}`); return; }
-      const { upsertSleepRecord } = await import('@/lib/db');
-      for (const r of data.sleep ?? []) {
-        await upsertSleepRecord({ ...r, imported_at: new Date().toISOString() });
-      }
+      const { upsertSleepRecord: upsert } = await import('@/lib/db');
+      for (const r of data.sleep ?? []) await upsert({ ...r, imported_at: new Date().toISOString() });
       await loadData();
-    } finally {
-      setSyncing(false);
-    }
+    } finally { setSyncing(false); }
   }
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   if (!ready) {
     return (
-      <div className="flex items-center justify-center h-screen gap-3">
+      <div className="flex items-center justify-center h-screen gap-3" style={{ background: '#0a0908' }}>
         <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
-        <span className="text-[#7a6e6a] text-sm">Initialisation…</span>
+        <span className="text-sm" style={{ color: '#7a6e6a' }}>Initialisation…</span>
       </div>
     );
   }
 
-  const score     = sleep?.sleep_score ?? 0;
-  const deepMin   = sleep?.deep_sleep_min  ?? 0;
-  const remMin    = sleep?.rem_sleep_min   ?? 0;
-  const durMin    = sleep?.duration_min    ?? 0;
-  const awakeMin  = sleep?.awake_min       ?? 0;
-  const lightMin  = Math.max(0, durMin - deepMin - remMin - awakeMin);
-  const deepPct   = pct(deepMin,  durMin);
-  const remPct    = pct(remMin,   durMin);
-  const lightPct  = pct(lightMin, durMin);
-  const awakePct  = pct(awakeMin, durMin);
-
-  const bars = sleep
-    ? buildArchitectBars(deepMin, remMin, lightMin, awakeMin, durMin)
-    : [];
+  const score    = sleep?.sleep_score    ?? 0;
+  const deepMin  = sleep?.deep_sleep_min ?? 0;
+  const remMin   = sleep?.rem_sleep_min  ?? 0;
+  const durMin   = sleep?.duration_min   ?? 0;
+  const awakeMin = sleep?.awake_min      ?? 0;
+  const hrAvg    = sleep?.hr_avg         ?? 0;
+  const lightMin = Math.max(0, durMin - deepMin - remMin - awakeMin);
+  const deepPct  = pct(deepMin, durMin);
+  const remPct   = pct(remMin,  durMin);
+  const lightPct = pct(lightMin, durMin);
+  const awakePct = pct(awakeMin, durMin);
+  const bars     = sleep ? buildArchitectBars(deepMin, remMin, lightMin, awakeMin) : [];
+  const dateStr  = sleep?.date ? fmtDate(sleep.date) : 'Aucune donnée';
 
   return (
-    <div className="px-4 pt-2 pb-28 max-w-lg mx-auto">
+    <div style={{ background: '#0a0908', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro", sans-serif', color: '#f0ebe6', position: 'relative' }}>
 
-      {/* ── CURATOR Header ───────────────────────────────────────────── */}
-      <header className="flex items-center justify-between mb-6 pt-3">
-        <span className="curator-brand">Sleepy</span>
-        <div className="flex items-center gap-3">
+      {/* Fixed orbs */}
+      <div aria-hidden style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        <Orb color="#ff6b35" size={420} top={-140} left={-100} opacity={0.60} />
+        <Orb color="#cc3300" size={300} top={220}  left={230}  opacity={0.45} />
+        <Orb color="#ffb040" size={340} top={560}  left={-120} opacity={0.38} />
+        <Orb color="#ff9955" size={260} top={760}  left={220}  opacity={0.35} />
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.08, mixBlendMode: 'overlay', backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>\")" }} />
+      </div>
+
+      {/* Floating score pill */}
+      <div style={{
+        position: 'fixed',
+        top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        left: 16, right: 16, zIndex: 30,
+        height: 64, display: 'flex', alignItems: 'center', gap: 12,
+        padding: '0 12px 0 10px',
+        opacity: heroVisible ? 0 : 1,
+        transform: heroVisible ? 'translateY(-8px) scale(0.96)' : 'translateY(0) scale(1)',
+        pointerEvents: heroVisible ? 'none' : 'auto',
+        transition: 'opacity 0.32s ease, transform 0.32s cubic-bezier(0.34,1.56,0.64,1)',
+        ...glass(999, 0.14, 0.22),
+      }}>
+        <div style={{ width: 48, height: 48, borderRadius: '50%', flexShrink: 0, background: `conic-gradient(#ff6b35 ${score * 36}deg, rgba(255,255,255,0.08) 0)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 14px rgba(255,107,53,0.55)' }}>
+          <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#15100c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#ffb040', letterSpacing: -0.5 }}>{score}</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: '0.18em', color: '#ff6b35', textTransform: 'uppercase' }}>Nightly</span>
+            <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.35)' }} />
+            <span style={{ fontSize: 12.5, color: '#fff8f0', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dateStr}</span>
+          </div>
+          {trend && (
+            <div style={{ fontSize: 11, fontWeight: 700, color: trend.score >= 0 ? '#7ee2a8' : '#e89383', marginTop: 3 }}>
+              {trend.score >= 0 ? '▲' : '▼'} {Math.abs(Math.round(trend.score))} pts vs semaine préc.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Page content */}
+      <div style={{ position: 'relative', zIndex: 1 }} className="px-4 pt-3 pb-32 max-w-lg mx-auto">
+
+        {/* Header */}
+        <header className="flex items-center justify-between mb-5 pt-2">
+          <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: '0.18em', color: '#ff6b35', textTransform: 'uppercase', textShadow: '0 0 12px rgba(255,107,53,0.4)' }}>Sleepy</span>
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold tracking-widest uppercase transition-all disabled:opacity-40"
-            style={{
-              background: '#ff6b3515',
-              border: '1px solid #ff6b3540',
-              color: '#ff6b35',
-            }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 999, background: 'rgba(255,107,53,0.12)', border: '1px solid rgba(255,107,53,0.32)', color: '#ff6b35', fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: 'pointer', opacity: syncing ? 0.5 : 1 }}>
             {syncing
               ? <span className="w-3 h-3 border border-t-transparent rounded-full animate-spin" style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
-              : '↓'
-            }
-            {syncing ? 'Sync…' : 'Import Data'}
+              : '↓'}
+            {syncing ? 'Sync…' : 'Import'}
           </button>
-        </div>
-      </header>
+        </header>
 
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <section className="mb-5">
-        <h1 className="text-3xl font-black tracking-tight" style={{ color: '#f0ebe6', letterSpacing: -1 }}>
-          Nightly Genesis
-        </h1>
-        <div className="flex items-center gap-2 mt-1">
-          <button
-            onClick={() => setCurrentIndex(i => Math.min(i + 1, allRecords.length - 1))}
-            disabled={currentIndex >= allRecords.length - 1}
-            className="text-base font-bold transition-opacity disabled:opacity-20 px-1"
-            style={{ color: '#7a6e6a' }}
-          >
-            ←
-          </button>
-          <p className="text-[13px] flex-1 text-center capitalize" style={{ color: '#7a6e6a' }}>
-            {sleep?.date ? fmtDate(sleep.date) : 'Aucune donnée — lance un import'}
-          </p>
-          <button
-            onClick={() => setCurrentIndex(i => Math.max(i - 1, 0))}
-            disabled={currentIndex <= 0}
-            className="text-base font-bold transition-opacity disabled:opacity-20 px-1"
-            style={{ color: '#7a6e6a' }}
-          >
-            →
-          </button>
-        </div>
-      </section>
-
-      {sleep ? (
-        <>
-          {/* ── Wearable Status ──────────────────────────────────────── */}
-          <div className="card mb-3" style={{ background: '#131110', borderColor: '#2a2320' }}>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="section-label mb-1">Wearable Status</p>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ background: '#4caf78', boxShadow: '0 0 6px #4caf78' }} />
-                  <span className="text-xs font-bold" style={{ color: '#f0ebe6' }}>Mi Band 8 · Active</span>
+        {sleep ? (
+          <>
+            {/* Hero card */}
+            <div ref={heroRef} style={{ padding: '16px 18px 18px', marginBottom: 12, ...glass(26, 0.10, 0.14) }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px 3px 8px', borderRadius: 999, background: 'rgba(255,107,53,0.14)', border: '1px solid rgba(255,107,53,0.32)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ff6b35', boxShadow: '0 0 8px #ff6b35' }} />
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.16em', color: '#ff6b35', textTransform: 'uppercase' }}>Nightly Genesis</span>
                 </div>
+                <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.45)', fontFamily: 'ui-monospace, Menlo, monospace' }}>{dateStr}</span>
               </div>
-              <span className="text-2xl opacity-60">⌚</span>
-            </div>
-
-            {/* Score + gauge row */}
-            <div className="flex items-center gap-5">
-              <SleepScoreGauge score={score} size={140} strokeWidth={9} />
-              <div className="flex-1">
-                {trend && (
-                  <div className="flex gap-2 mb-3">
-                    <TrendBadge label="Score" delta={trend.score} fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)} pts`} />
-                    <TrendBadge label="Durée" delta={trend.dur}   fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)} min`} />
-                  </div>
-                )}
-                <div className="flex items-center gap-2 text-[11px]" style={{ color: '#3d3330' }}>
-                  <span>⊙</span>
-                  <span>Synced {sleep.imported_at
-                    ? `${Math.round((Date.now() - new Date(sleep.imported_at).getTime()) / 60000)} min ago`
-                    : 'récemment'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] mt-1" style={{ color: '#3d3330' }}>
-                  <span>◑</span>
-                  <span>{sleep.steps ? `${sleep.steps.toLocaleString('fr-FR')} pas` : '— pas'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── HR + Duration row ────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            {/* Heart Rate */}
-            <div className="card" style={{ background: '#131110', borderColor: '#2a2320' }}>
-              <p className="section-label mb-2">Heart Rate Range</p>
-              <div className="flex items-baseline gap-1 mb-3">
-                <span className="text-xs font-bold" style={{ color: '#7a6e6a' }}>
-                  {sleep.hr_avg > 5 ? sleep.hr_avg - 8 : '—'}
-                </span>
-                <div className="flex-1 h-1.5 rounded-full mx-1" style={{ background: 'linear-gradient(to right, #ff6b3530, #ff6b35)' }} />
-                <span className="text-xs font-bold" style={{ color: '#ff6b35' }}>
-                  {sleep.hr_avg > 0 ? sleep.hr_avg + 12 : '—'}
-                </span>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-black" style={{ color: '#f0ebe6', letterSpacing: -1 }}>
-                  {sleep.hr_avg > 0 ? sleep.hr_avg : '—'}
-                </span>
-                <span className="text-xs font-semibold" style={{ color: '#7a6e6a' }}>bpm moy.</span>
-              </div>
-              <p className="text-[10px] mt-1" style={{ color: '#3d3330' }}>
-                {sleep.hr_avg > 0
-                  ? `Fréquence cardiaque normale`
-                  : 'Données indisponibles'}
-              </p>
-            </div>
-
-            {/* Duration */}
-            <div className="card" style={{ background: '#131110', borderColor: '#2a2320' }}>
-              <p className="section-label mb-2">Total Duration</p>
-              <div className="flex items-baseline gap-1 mb-1">
-                <span className="text-3xl font-black" style={{ color: '#f0ebe6', letterSpacing: -1 }}>
-                  {fmtDur(durMin)}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 mb-3">
-                <span className="text-[11px] font-semibold" style={{ color: durMin >= 420 ? '#4caf78' : '#ff8c00' }}>
-                  {durMin >= 480 ? '+Goal' : durMin >= 420 ? '≈Goal' : '–Goal'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px]" style={{ color: '#3d3330' }}>🛏 {sleep.sleep_start}</span>
-                <span style={{ color: '#3d3330' }}>→</span>
-                <span className="text-[10px]" style={{ color: '#3d3330' }}>☀️ {sleep.sleep_end}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Sleep Architect ──────────────────────────────────────── */}
-          <div className="card mb-3" style={{ background: '#131110', borderColor: '#2a2320' }}>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="section-label mb-0.5">Sleep Architect</p>
-                <p className="text-xs font-semibold" style={{ color: '#f0ebe6' }}>Biological cycle breakdown</p>
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center gap-3 mb-4">
-              {[
-                { label: 'Éveils',  color: '#ff6b35' },
-                { label: 'REM',     color: '#ffb040' },
-                { label: 'Léger',   color: '#ff9955' },
-                { label: 'Profond', color: '#cc3300' },
-              ].map(l => (
-                <div key={l.label} className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />
-                  <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: '#7a6e6a' }}>{l.label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Bar chart */}
-            <div className="flex items-end gap-0.5 mb-3" style={{ height: 72 }}>
-              {bars.map((b, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-sm"
-                  style={{
-                    height: `${b.height}%`,
-                    background: b.color,
-                    opacity: 0.85,
-                    minWidth: 0,
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* Time axis */}
-            <div className="flex justify-between text-[9px] font-bold uppercase tracking-widest mb-4" style={{ color: '#3d3330' }}>
-              <span>{sleep.sleep_start || '22:00'}</span>
-              <span>{sleep.sleep_end   || '06:00'}</span>
-            </div>
-
-            {/* Phase stats */}
-            <div className="grid grid-cols-2 gap-2">
-              <PhaseRow label="Profond"  color="#cc3300" dur={fmtDur(deepMin)}  note={`${deepPct}% · Objectif >20%`} />
-              <PhaseRow label="Léger"    color="#ff9955" dur={fmtDur(lightMin)} note={`${lightPct}%`} />
-              <PhaseRow label="REM"      color="#ffb040" dur={fmtDur(remMin)}   note={`${remPct}% · Normalement 20%`} />
-              <PhaseRow label="Éveillé"  color="#ff6b35" dur={fmtDur(awakeMin)} note={`${awakePct}% · Good <5%`} />
-            </div>
-          </div>
-
-          {/* ── Curated Observations ─────────────────────────────────── */}
-          <div className="mb-3">
-            <p className="section-label mb-2">Curated Observations</p>
-            <div className="card" style={{ background: '#131110', borderColor: '#ff6b3520' }}>
-              <div className="flex gap-3">
-                <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg"
-                  style={{ background: '#ff6b3515', border: '1px solid #ff6b3530' }}>
-                  ◈
-                </div>
-                <div>
-                  <p className="text-xs font-bold mb-1" style={{ color: '#ff6b35' }}>AI Insight</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <ScoreRing score={score} size={124} stroke={8} />
+                <div style={{ flex: 1, minWidth: 0 }}>
                   {loadingAi ? (
-                    <div className="flex items-center gap-2">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="w-3.5 h-3.5 border border-t-transparent rounded-full animate-spin shrink-0" style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
-                      <span className="text-xs" style={{ color: '#7a6e6a' }}>Analyse en cours…</span>
+                      <span style={{ fontSize: 12, color: 'rgba(240,235,230,0.5)' }}>Analyse en cours…</span>
                     </div>
                   ) : (
-                    <p className="text-sm leading-relaxed" style={{ color: '#c4b8b0' }}>{aiComment}</p>
+                    <p style={{ fontSize: 13.5, lineHeight: 1.45, color: '#f8f3ee', fontWeight: 400, letterSpacing: -0.1, margin: 0 }}>
+                      <span style={{ fontFamily: 'ui-serif, "New York", Georgia, serif', fontStyle: 'italic', color: '#ffb040', fontSize: 17 }}>{'« '}</span>
+                      {aiComment || 'Bonne nuit de récupération — données analysées.'}
+                      <span style={{ fontFamily: 'ui-serif, "New York", Georgia, serif', fontStyle: 'italic', color: '#ffb040', fontSize: 17 }}>{' »'}</span>
+                    </p>
                   )}
                 </div>
               </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <DTrend label="Score" delta={trend ? `${trend.score >= 0 ? '+' : ''}${Math.round(trend.score)} pts` : '—'} up={!trend || trend.score >= 0} />
+                <DTrend label="Durée" delta={trend ? `${trend.dur >= 0 ? '+' : ''}${Math.round(trend.dur)} min` : '—'} up={!trend || trend.dur >= 0} />
+                <DTrend label="FC"    delta={hrAvg > 0 ? `${hrAvg} bpm` : '—'} up />
+              </div>
+            </div>
+
+            {/* HR + Duration */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div style={{ padding: '12px 14px', ...glass(18, 0.07) }}>
+                <SLabel>Fréquence Cardiaque</SLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(240,235,230,0.55)' }}>{hrAvg > 5 ? hrAvg - 8 : '—'}</span>
+                  <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'linear-gradient(90deg, rgba(255,107,53,0.2), #ff6b35)', boxShadow: '0 0 8px rgba(255,107,53,0.4)' }} />
+                  <span style={{ fontSize: 10, fontWeight: 700, color: '#ff6b35' }}>{hrAvg > 0 ? hrAvg + 12 : '—'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                  <span style={{ fontSize: 28, fontWeight: 800, color: '#f8f3ee', letterSpacing: -1 }}>{hrAvg > 0 ? hrAvg : '—'}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(240,235,230,0.5)' }}>bpm moy.</span>
+                </div>
+              </div>
+              <div style={{ padding: '12px 14px', ...glass(18, 0.07) }}>
+                <SLabel>Durée Totale</SLabel>
+                <div style={{ marginTop: 10 }}>
+                  <span style={{ fontSize: 28, fontWeight: 800, color: '#f8f3ee', letterSpacing: -1 }}>{fmtDur(durMin)}</span>
+                </div>
+                <div style={{ marginTop: 3, fontSize: 10.5, fontWeight: 700, color: durMin >= 420 ? '#4caf78' : '#ffb040' }}>
+                  {durMin >= 480 ? '+Objectif' : durMin >= 420 ? '≈ Objectif' : '− Objectif'}
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'rgba(240,235,230,0.4)' }}>
+                  <span>🌙 {sleep.sleep_start}</span><span>→</span><span>☀ {sleep.sleep_end}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sleep Architect */}
+            <div
+              onClick={() => setExpanded(e => e === 'architect' ? null : 'architect')}
+              style={{ padding: '14px 16px 16px', cursor: 'pointer', marginBottom: 12, ...glass(22, 0.09, 0.12) }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+                <SLabel>Sleep Architect</SLabel>
+                <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.35)' }}>{expanded === 'architect' ? '– réduire' : '+ détails'}</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'rgba(240,235,230,0.7)', marginBottom: 12 }}>Cycles biologiques de la nuit</div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                {[{ l: 'Profond', c: '#cc3300' }, { l: 'Léger', c: '#ff9955' }, { l: 'REM', c: '#ffb040' }, { l: 'Éveils', c: '#ff6b35' }].map(({ l, c }) => (
+                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: c, boxShadow: `0 0 4px ${c}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', color: 'rgba(240,235,230,0.55)', textTransform: 'uppercase' }}>{l}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 78, padding: '0 2px' }}>
+                {bars.map((b, i) => (
+                  <div key={i} style={{ flex: 1, minWidth: 0, height: `${b.height}%`, background: `linear-gradient(180deg, ${b.color}, ${b.color}cc)`, borderRadius: 3, boxShadow: `0 0 6px ${b.color}66`, opacity: 0.92 }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 9, fontWeight: 800, letterSpacing: '0.2em', color: 'rgba(240,235,230,0.35)', textTransform: 'uppercase', fontFamily: 'ui-monospace, Menlo, monospace' }}>
+                <span>{sleep.sleep_start || '22:00'}</span><span>03:00</span><span>{sleep.sleep_end || '06:00'}</span>
+              </div>
+              {expanded === 'architect' && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <Phase color="#cc3300" label="Profond"  dur={fmtDur(deepMin)}  pct={`${deepPct} %`}  note="Objectif >20%" />
+                  <Phase color="#ff9955" label="Léger"    dur={fmtDur(lightMin)} pct={`${lightPct} %`} note="Dans la norme" />
+                  <Phase color="#ffb040" label="REM"      dur={fmtDur(remMin)}   pct={`${remPct} %`}   note="Cible ~20%" />
+                  <Phase color="#ff6b35" label="Éveillé"  dur={fmtDur(awakeMin)} pct={`${awakePct} %`} note="Objectif <5%" />
+                </div>
+              )}
+            </div>
+
+            {/* AI Insight */}
+            <div
+              onClick={() => setExpanded(e => e === 'observation' ? null : 'observation')}
+              style={{ padding: '14px 16px', cursor: 'pointer', marginBottom: 12, ...glass(22, 0.08, 0.14) }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px 3px 8px', borderRadius: 999, background: 'rgba(255,107,53,0.14)', border: '1px solid rgba(255,107,53,0.32)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ff6b35', boxShadow: '0 0 8px #ff6b35' }} />
+                  <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.16em', color: '#ff6b35', textTransform: 'uppercase' }}>AI Insight</span>
+                </div>
+                <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.4)', fontFamily: 'ui-monospace, Menlo, monospace' }}>
+                  {expanded === 'observation' ? '– réduire' : '+ détails'}
+                </span>
+              </div>
+              {loadingAi ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="w-3.5 h-3.5 border border-t-transparent rounded-full animate-spin shrink-0" style={{ borderColor: '#ff6b35', borderTopColor: 'transparent' }} />
+                  <span style={{ fontSize: 13, color: 'rgba(240,235,230,0.5)' }}>Analyse en cours…</span>
+                </div>
+              ) : (
+                <p style={{ fontSize: 14, lineHeight: 1.5, color: '#f8f3ee', fontWeight: 400, letterSpacing: -0.05, margin: 0 }}>
+                  <span style={{ fontFamily: 'ui-serif, "New York", Georgia, serif', fontStyle: 'italic', color: '#ffb040', fontSize: 17 }}>{'« '}</span>
+                  {aiComment || "Lance un import pour obtenir une analyse personnalisée."}
+                  <span style={{ fontFamily: 'ui-serif, "New York", Georgia, serif', fontStyle: 'italic', color: '#ffb040', fontSize: 17 }}>{' »'}</span>
+                </p>
+              )}
+              {expanded === 'observation' && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5, color: 'rgba(240,235,230,0.75)', lineHeight: 1.5 }}>
+                  <div>• Deep sleep : <strong style={{ color: '#cc3300' }}>{fmtDur(deepMin)}</strong> ({deepPct}%){deepPct >= 20 ? ' — objectif atteint ✓' : ' — objectif >20%'}.</div>
+                  <div>• REM : <strong style={{ color: '#ffb040' }}>{fmtDur(remMin)}</strong> ({remPct}%){remPct >= 18 ? ' — dans la cible.' : ' — cible ~20%.'}.</div>
+                  <div>• Éveils : <strong style={{ color: '#ff9955' }}>{fmtDur(awakeMin)}</strong> ({awakePct}%){awakePct <= 5 ? ' — très bien.' : ' — un peu élevé.'}.</div>
+                  {hrAvg > 0 && <div>• FC moy. <strong style={{ color: '#e05a4a' }}>{hrAvg} bpm</strong> — fréquence de récupération.</div>}
+                </div>
+              )}
+            </div>
+
+            {/* Metrics grid */}
+            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.22em', color: 'rgba(240,235,230,0.4)', textTransform: 'uppercase', padding: '6px 2px 8px' }}>Métriques détaillées</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+              <Metric label="Deep"    value={`${deepPct}`}  unit="%"   color="#cc3300" />
+              <Metric label="REM"     value={`${remPct}`}   unit="%"   color="#ffb040" />
+              <Metric label="Éveil"   value={fmtDur(awakeMin)}          color="#ff6b35" />
+              <Metric label="FC moy." value={hrAvg > 0 ? `${hrAvg}` : '—'} unit="bpm" color="#e05a4a" />
+              <Metric label="Pas"     value={(sleep.steps ?? 0).toLocaleString('fr-FR')} color="#4caf78" onClick={openStepsEdit} />
+              <Metric label="Couché"  value={sleep.sleep_start ?? '—'}  color="#ff9955" />
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center py-20 text-center">
+            <div style={{ width: 64, height: 64, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, marginBottom: 20, ...glass(20, 0.08) }}>🌙</div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'rgba(240,235,230,0.5)', margin: 0 }}>
+              Aucune donnée de sommeil.<br />Appuie sur Import pour commencer.
+            </p>
+          </div>
+        )}
+
+        {/* Lifestyle CTA */}
+        <div
+          onClick={() => setFormOpen(true)}
+          style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', ...glass(20, 0.06, 0.10) }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, fontSize: 16, background: lifestyle ? 'rgba(76,175,120,0.15)' : 'rgba(255,107,53,0.15)', border: `1px solid ${lifestyle ? 'rgba(76,175,120,0.3)' : 'rgba(255,107,53,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: lifestyle ? '#4caf78' : '#ff6b35' }}>
+            {lifestyle ? '✓' : '✎'}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: '#f8f3ee' }}>
+              {lifestyle ? 'Log lifestyle enregistré' : 'Remplis le log du soir'}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'rgba(240,235,230,0.5)', marginTop: 2 }}>
+              {lifestyle ? 'Appuie pour modifier' : 'Caféine · sport · repas · écrans — < 30 s'}
             </div>
           </div>
-
-          {/* ── Metrics grid ─────────────────────────────────────────── */}
-          <p className="section-label mb-2">Métriques détaillées</p>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <MetricCard icon="⏱" label="Durée totale" value={fmtDur(durMin)}
-              color="#f0ebe6"
-              trend={trend ? (trend.dur > 0 ? 'up' : 'down') : undefined} trendPositive />
-            <MetricCard icon="▼" label="Deep sleep" value={String(deepPct)} unit="%" color="#cc3300" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <MetricCard icon="◎" label="REM" value={String(remPct)} unit="%" color="#ffb040" />
-            <MetricCard icon="♡" label="FC moy." value={String(sleep.hr_avg)} unit="bpm" color="#e05a4a" />
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-5">
-            <MetricCard icon="👟" label="Pas" value={(sleep.steps ?? 0).toLocaleString('fr-FR')} color="#4caf78" onClick={openStepsEdit} />
-            <MetricCard icon="○" label="Éveillé" value={fmtDur(awakeMin)} color="#7a6e6a" trendPositive={false} />
-          </div>
-        </>
-      ) : (
-        <div className="flex flex-col items-center py-20 text-center">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-5"
-            style={{ background: '#131110', border: '1px solid #2a2320' }}>
-            🌙
-          </div>
-          <p className="text-sm leading-relaxed" style={{ color: '#7a6e6a' }}>
-            Aucune donnée de sommeil.<br />Appuie sur Import Data pour commencer.
-          </p>
+          <span style={{ color: 'rgba(240,235,230,0.3)', fontSize: 16 }}>›</span>
         </div>
-      )}
+      </div>
 
-      {/* ── Lifestyle CTA ────────────────────────────────────────────── */}
-      <button
-        onClick={() => setFormOpen(true)}
-        className="w-full card flex items-center gap-4 text-left"
-        style={{
-          background: '#131110',
-          borderColor: lifestyle ? '#4caf7840' : '#ff6b3530',
-        }}>
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
-          style={{ background: lifestyle ? '#4caf7815' : '#ff6b3515' }}>
-          {lifestyle ? '✓' : '✏'}
-        </div>
-        <div>
-          <p className="text-sm font-bold" style={{ color: '#f0ebe6' }}>
-            {lifestyle ? 'Log lifestyle enregistré' : 'Remplis le log du soir'}
-          </p>
-          <p className="text-xs mt-0.5" style={{ color: '#7a6e6a' }}>
-            {lifestyle ? 'Appuie pour modifier' : 'Caféine, sport, repas, écrans — < 30s'}
-          </p>
-        </div>
-      </button>
-
-      {/* ── Steps edit modal ─────────────────────────────────────────── */}
+      {/* Steps edit modal */}
       {stepsEdit && (
         <>
           <div className="fixed inset-0 bg-black/70 z-40 backdrop-blur-sm" onClick={() => setStepsEdit(false)} />
-          <div
-            className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 rounded-2xl p-6 shadow-2xl max-w-xs mx-auto"
-            style={{ background: '#131110', border: '1px solid #2a2320' }}>
-            <p className="font-black text-base mb-1" style={{ color: '#f0ebe6' }}>Nombre de pas</p>
-            <p className="text-xs mb-4" style={{ color: '#7a6e6a' }}>Modifie le nombre de pas</p>
+          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 p-6 max-w-xs mx-auto" style={{ ...glass(24, 0.12, 0.18) }}>
+            <p style={{ fontWeight: 800, fontSize: 16, color: '#f8f3ee', marginBottom: 4, marginTop: 0 }}>Nombre de pas</p>
+            <p style={{ fontSize: 12, color: 'rgba(240,235,230,0.5)', marginBottom: 16, marginTop: 0 }}>Modifie le nombre de pas</p>
             <input
-              type="number"
-              min="0"
+              type="number" min="0"
               value={stepsInput}
               onChange={e => setStepsInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && saveSteps()}
               autoFocus
-              className="w-full rounded-xl px-4 py-3 text-lg font-black text-center focus:outline-none mb-4"
-              style={{
-                background: '#0a0908',
-                border: '1px solid #2a2320',
-                color: '#f0ebe6',
-              }}
+              style={{ width: '100%', borderRadius: 14, padding: '12px 16px', fontSize: 18, fontWeight: 800, textAlign: 'center', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.12)', color: '#f8f3ee', outline: 'none', boxSizing: 'border-box', marginBottom: 16, display: 'block' }}
             />
-            <div className="flex gap-3">
-              <button
-                onClick={() => setStepsEdit(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-                style={{ border: '1px solid #2a2320', color: '#7a6e6a' }}>
-                Annuler
-              </button>
-              <button
-                onClick={saveSteps}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors glow-orange"
-                style={{ background: '#ff6b35', color: '#fff' }}>
-                Enregistrer
-              </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setStepsEdit(false)} style={{ flex: 1, padding: '10px 0', borderRadius: 14, border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(240,235,230,0.6)', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>Annuler</button>
+              <button onClick={saveSteps} style={{ flex: 1, padding: '10px 0', borderRadius: 14, border: 'none', background: '#ff6b35', color: '#fff', fontWeight: 800, cursor: 'pointer', fontSize: 14, boxShadow: '0 0 16px rgba(255,107,53,0.4)' }}>Enregistrer</button>
             </div>
           </div>
         </>
       )}
 
-      {/* ── Lifestyle Form ────────────────────────────────────────────── */}
       <LifestyleForm
         visible={formOpen}
         initial={lifestyle}
         todaySteps={sleep?.steps ?? 0}
-        onSave={async log => { await upsertLifestyleLog(log); setLifestyle(await getLifestyleLogByDate(sleep?.date ?? '')); }}
+        onSave={async log => { await upsertLifestyleLog(log); setLifestyle(await getTodayLifestyleLog()); }}
         onClose={() => setFormOpen(false)}
       />
     </div>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+function Orb({ color, size, top, left, opacity }: { color: string; size: number; top: number; left: number; opacity: number }) {
+  return <div style={{ position: 'absolute', top, left, width: size, height: size, borderRadius: '50%', background: color, opacity, filter: 'blur(80px)' }} />;
+}
 
-function TrendBadge({ label, delta, fmt }: { label: string; delta: number; fmt: (v: number) => string }) {
-  const positive = delta >= 0;
+function ScoreRing({ score, size = 140, stroke = 9 }: { score: number; size?: number; stroke?: number }) {
+  const cx = size / 2, cy = size / 2;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const arcLen = c * 0.75;
+  const progress = (score / 100) * arcLen;
+  const arcColor = score >= 80 ? '#ff6b35' : score >= 60 ? '#ff8c00' : score >= 40 ? '#ffb040' : '#e05a4a';
   return (
-    <div
-      className="flex-1 rounded-xl px-2 py-1.5 flex flex-col"
-      style={{
-        background: positive ? '#4caf7810' : '#e05a4a10',
-        border: `1px solid ${positive ? '#4caf7830' : '#e05a4a30'}`,
-      }}>
-      <span className="text-xs font-black" style={{ color: positive ? '#4caf78' : '#e05a4a' }}>
-        {fmt(delta)}
-      </span>
-      <span className="text-[9px] font-semibold mt-0.5" style={{ color: '#3d3330' }}>{label}</span>
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size}>
+        <defs>
+          <linearGradient id="sgGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor={arcColor} stopOpacity={0.4} />
+            <stop offset="100%" stopColor={arcColor} stopOpacity={1} />
+          </linearGradient>
+          <filter id="sgGlow"><feGaussianBlur stdDeviation="3" /></filter>
+        </defs>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke}
+          strokeDasharray={`${arcLen} ${c - arcLen}`} strokeLinecap="round" transform={`rotate(135 ${cx} ${cy})`} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={arcColor} strokeOpacity="0.35" strokeWidth={stroke}
+          strokeDasharray={`${progress} ${c - progress}`} strokeLinecap="round"
+          transform={`rotate(135 ${cx} ${cy})`} filter="url(#sgGlow)" />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#sgGrad)" strokeWidth={stroke}
+          strokeDasharray={`${progress} ${c - progress}`} strokeLinecap="round" transform={`rotate(135 ${cx} ${cy})`} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, paddingBottom: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+          <span style={{ fontSize: 34, fontWeight: 800, color: arcColor, letterSpacing: -2, lineHeight: 1, textShadow: `0 0 16px ${arcColor}80` }}>
+            {(score / 10).toFixed(1)}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: arcColor, opacity: 0.6 }}>/10</span>
+        </div>
+        <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.22em', color: 'rgba(240,235,230,0.55)', textTransform: 'uppercase', marginTop: 4 }}>Score</span>
+      </div>
     </div>
   );
 }
 
-function PhaseRow({ label, color, dur, note }: { label: string; color: string; dur: string; note: string }) {
+function SLabel({ children }: { children: React.ReactNode }) {
+  return <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.22em', color: 'rgba(240,235,230,0.55)', textTransform: 'uppercase' }}>{children}</span>;
+}
+
+function DTrend({ label, delta, up }: { label: string; delta: string; up: boolean }) {
+  const color = up ? '#4caf78' : '#e89383';
+  return (
+    <div style={{ flex: 1, padding: '8px 10px', borderRadius: 12, background: up ? 'rgba(76,175,120,0.08)' : 'rgba(232,147,131,0.08)', border: `1px solid ${up ? 'rgba(76,175,120,0.22)' : 'rgba(232,147,131,0.22)'}` }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color, letterSpacing: -0.2 }}>{delta}</div>
+      <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(240,235,230,0.4)', textTransform: 'uppercase', marginTop: 1 }}>{label}</div>
+    </div>
+  );
+}
+
+function Phase({ color, label, dur, pct, note }: { color: string; label: string; dur: string; pct: string; note: string }) {
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 14, background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0 }} />
+        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.18em', color: 'rgba(240,235,230,0.55)', textTransform: 'uppercase' }}>{label}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <span style={{ fontSize: 17, fontWeight: 800, color: '#f8f3ee', letterSpacing: -0.5 }}>{dur}</span>
+        <span style={{ fontSize: 10.5, color, fontWeight: 700 }}>{pct}</span>
+      </div>
+      <div style={{ fontSize: 9.5, color: 'rgba(240,235,230,0.4)', marginTop: 2 }}>{note}</div>
+    </div>
+  );
+}
+
+function Metric({ label, value, unit, color, onClick }: { label: string; value: string; unit?: string; color: string; onClick?: () => void }) {
   return (
     <div
-      className="rounded-xl px-3 py-2.5 flex flex-col"
-      style={{ background: '#0a0908', border: '1px solid #2a2320' }}>
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7a6e6a' }}>{label}</span>
+      onClick={onClick}
+      style={{ padding: '10px 12px', borderRadius: 14, cursor: onClick ? 'pointer' : 'default', background: 'rgba(255,255,255,0.06)', backdropFilter: 'blur(24px) saturate(180%)', WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 12px rgba(0,0,0,0.25)' }}>
+      <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.2em', color: 'rgba(240,235,230,0.5)', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, marginTop: 5 }}>
+        <span style={{ fontSize: 18, fontWeight: 800, color, letterSpacing: -0.6 }}>{value}</span>
+        {unit && <span style={{ fontSize: 10, color, opacity: 0.6 }}>{unit}</span>}
       </div>
-      <span className="text-base font-black" style={{ color: '#f0ebe6', letterSpacing: -0.5 }}>{dur}</span>
-      <span className="text-[9px] mt-0.5" style={{ color: '#3d3330' }}>{note}</span>
     </div>
   );
 }
