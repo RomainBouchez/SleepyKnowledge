@@ -86,7 +86,14 @@ async function loadSqlJsFromCDN(): Promise<SqlJsStatic> {
       const script = document.createElement('script');
       script.src = `${SQL_JS_CDN}/sql-wasm.js`;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Impossible de charger sql.js depuis CDN'));
+      script.onerror = () => reject(new Error(
+        'Impossible de charger le moteur SQLite. Vérifie ta connexion internet et réessaie.'
+      ));
+      // Timeout de 15 s — les réseaux mobiles peuvent être lents
+      const timer = setTimeout(() => {
+        reject(new Error('Délai dépassé lors du chargement du moteur SQLite. Réessaie sur un réseau plus rapide.'));
+      }, 15_000);
+      script.onload = () => { clearTimeout(timer); resolve(); };
       document.head.appendChild(script);
     });
   }

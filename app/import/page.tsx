@@ -309,7 +309,7 @@ export default function ImportPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".zip,.db"
+                accept=".zip,.db,application/zip,application/x-zip-compressed,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
                 onChange={onFileChange}
                 className="hidden"
               />
