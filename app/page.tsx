@@ -15,23 +15,46 @@ const fmtDate = (d?: string) => d
   ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
   : '';
 
-function buildArchitectBars(deepMin: number, remMin: number, lightMin: number, awakeMin: number): { color: string; height: number }[] {
-  const bars: { color: string; height: number }[] = [];
-  for (let i = 0; i < 28; i++) {
-    const phase = i / 28;
-    let color: string, height: number;
-    if (awakeMin > 0 && (i === 3 || i === 14 || i === 22)) {
-      color = '#ff6b35'; height = 48 + (i * 7 % 18);
-    } else if (phase < 0.35 && deepMin > 0) {
-      color = '#cc3300'; height = 70 + Math.sin(i * 1.2) * 18;
-    } else if (phase > 0.65 && remMin > 0) {
-      color = '#ffb040'; height = 52 + Math.sin(i * 0.9) * 24;
-    } else {
-      color = '#ff9955'; height = 38 + Math.sin(i * 1.5) * 20;
-    }
-    bars.push({ color, height: Math.min(100, Math.max(16, height)) });
+// Profond=4 (petit/sombre) → Léger=3 → REM=2 → Éveillé=5 (grand/jaune)
+const ARCH_STAGE: Record<number, { color: string; height: number }> = {
+  4: { color: '#7a1500', height: 18 }, // profond – rouge foncé, barre basse
+  3: { color: '#cc3300', height: 42 }, // léger   – orange foncé
+  2: { color: '#ff9955', height: 65 }, // REM     – orange clair
+  5: { color: '#ffd040', height: 90 }, // éveillé – jaune,    barre haute
+};
+
+function buildArchitectBars(
+  stagesJson: string | null | undefined,
+  deepMin: number, lightMin: number, remMin: number, awakeMin: number,
+): { color: string; height: number; flex: number }[] {
+  // Vraies données : largeur ∝ durée du segment
+  if (stagesJson) {
+    try {
+      const items = JSON.parse(stagesJson) as { state: number; start_time: number; end_time: number }[];
+      if (items.length > 0) {
+        const totalSec = items.reduce((s, it) => s + (it.end_time - it.start_time), 0) || 1;
+        return items.map(it => {
+          const cfg = ARCH_STAGE[it.state] ?? ARCH_STAGE[3];
+          return { color: cfg.color, height: cfg.height, flex: (it.end_time - it.start_time) / totalSec };
+        });
+      }
+    } catch { /* JSON corrompu */ }
   }
-  return bars;
+  // Fallback simulé quand pas de données granulaires
+  const total = deepMin + lightMin + remMin + awakeMin || 1;
+  const segments: { state: number; min: number }[] = [
+    { state: 4, min: deepMin },
+    { state: 3, min: lightMin * 0.4 },
+    { state: 2, min: remMin * 0.5 },
+    { state: 3, min: lightMin * 0.4 },
+    { state: 2, min: remMin * 0.5 },
+    { state: 5, min: awakeMin },
+    { state: 3, min: lightMin * 0.2 },
+  ].filter(s => s.min > 0);
+  return segments.map(s => {
+    const cfg = ARCH_STAGE[s.state];
+    return { color: cfg.color, height: cfg.height, flex: s.min / total };
+  });
 }
 
 function glass(radius = 22, tint = 0.08, border = 0.12): React.CSSProperties {
@@ -157,7 +180,7 @@ export default function DashboardPage() {
   const remPct   = pct(remMin,  durMin);
   const lightPct = pct(lightMin, durMin);
   const awakePct = pct(awakeMin, durMin);
-  const bars     = sleep ? buildArchitectBars(deepMin, remMin, lightMin, awakeMin) : [];
+  const bars     = sleep ? buildArchitectBars(sleep.sleep_stages_json, deepMin, lightMin, remMin, awakeMin) : [];
   const dateStr  = sleep?.date ? fmtDate(sleep.date) : 'Aucune donnée';
 
   return (
@@ -292,16 +315,16 @@ export default function DashboardPage() {
               </div>
               <div style={{ fontSize: 13, color: 'rgba(240,235,230,0.7)', marginBottom: 12 }}>Cycles biologiques de la nuit</div>
               <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                {[{ l: 'Profond', c: '#cc3300' }, { l: 'Léger', c: '#ff9955' }, { l: 'REM', c: '#ffb040' }, { l: 'Éveils', c: '#ff6b35' }].map(({ l, c }) => (
+                {[{ l: 'Profond', c: '#7a1500' }, { l: 'Léger', c: '#cc3300' }, { l: 'REM', c: '#ff9955' }, { l: 'Éveils', c: '#ffd040' }].map(({ l, c }) => (
                   <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: c, boxShadow: `0 0 4px ${c}`, flexShrink: 0 }} />
                     <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', color: 'rgba(240,235,230,0.55)', textTransform: 'uppercase' }}>{l}</span>
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 78, padding: '0 2px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 78, padding: '0 2px' }}>
                 {bars.map((b, i) => (
-                  <div key={i} style={{ flex: 1, minWidth: 0, height: `${b.height}%`, background: `linear-gradient(180deg, ${b.color}, ${b.color}cc)`, borderRadius: 3, boxShadow: `0 0 6px ${b.color}66`, opacity: 0.92 }} />
+                  <div key={i} style={{ flex: b.flex, minWidth: 2, height: `${b.height}%`, background: `linear-gradient(180deg, ${b.color}ee, ${b.color}99)`, borderRadius: 2, boxShadow: `0 0 5px ${b.color}55`, transition: 'height 0.3s ease' }} />
                 ))}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 9, fontWeight: 800, letterSpacing: '0.2em', color: 'rgba(240,235,230,0.35)', textTransform: 'uppercase', fontFamily: 'ui-monospace, Menlo, monospace' }}>
@@ -309,10 +332,10 @@ export default function DashboardPage() {
               </div>
               {expanded === 'architect' && (
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <Phase color="#cc3300" label="Profond"  dur={fmtDur(deepMin)}  pct={`${deepPct} %`}  note="Objectif >20%" />
-                  <Phase color="#ff9955" label="Léger"    dur={fmtDur(lightMin)} pct={`${lightPct} %`} note="Dans la norme" />
-                  <Phase color="#ffb040" label="REM"      dur={fmtDur(remMin)}   pct={`${remPct} %`}   note="Cible ~20%" />
-                  <Phase color="#ff6b35" label="Éveillé"  dur={fmtDur(awakeMin)} pct={`${awakePct} %`} note="Objectif <5%" />
+                  <Phase color="#7a1500" label="Profond"  dur={fmtDur(deepMin)}  pct={`${deepPct} %`}  note="Objectif >20%" />
+                  <Phase color="#cc3300" label="Léger"    dur={fmtDur(lightMin)} pct={`${lightPct} %`} note="Dans la norme" />
+                  <Phase color="#ff9955" label="REM"      dur={fmtDur(remMin)}   pct={`${remPct} %`}   note="Cible ~20%" />
+                  <Phase color="#ffd040" label="Éveillé"  dur={fmtDur(awakeMin)} pct={`${awakePct} %`} note="Objectif <5%" />
                 </div>
               )}
             </div>

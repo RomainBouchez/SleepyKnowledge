@@ -16,7 +16,7 @@ import sqlite3
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 try:
@@ -101,7 +101,7 @@ def calc_sleep_score(duration: int, deep: int, light: int, rem: int) -> int:
 # ── SQLite readers ────────────────────────────────────────────────────────────
 
 def read_sleep_records(conn) -> list:
-    rows = conn.execute("SELECT value FROM sleep ORDER BY id").fetchall()
+    rows = conn.execute("SELECT value FROM sleep ORDER BY rowid").fetchall()
     records = []
     for (raw,) in rows:
         try:
@@ -111,15 +111,17 @@ def read_sleep_records(conn) -> list:
     return records
 
 def read_steps_by_date(conn) -> dict:
-    """Dict {date_str: steps} depuis table steps_day."""
-    rows = conn.execute("SELECT value FROM steps_day ORDER BY id").fetchall()
+    """Dict {date_str: steps} depuis table steps_day.
+    `time` est une colonne UTC midnight (pas dans le JSON), `steps` est dans value JSON."""
+    rows = conn.execute("SELECT time, value FROM steps_day WHERE deleted = 0 ORDER BY rowid").fetchall()
     result = {}
-    for (raw,) in rows:
+    for (ts, raw) in rows:
         try:
             d = json.loads(raw)
-            ts = d.get("time", 0)
-            date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
-            result[date_str] = d.get("steps", 0)
+            # time est en UTC — cohérent avec sleep_day
+            date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            if d.get("steps") is not None:
+                result[date_str] = d["steps"]
         except (json.JSONDecodeError, TypeError, OSError):
             pass
     return result
@@ -141,11 +143,14 @@ def map_sleep_record(raw: dict, steps_by_date: dict, device_id: str):
 
         dt_sleep = datetime.fromtimestamp(bedtime)
         dt_wake  = datetime.fromtimestamp(wake_up)
-        date_str = dt_sleep.strftime("%Y-%m-%d")
+        # Mi Fitness date une nuit par le jour du réveil (wake_up_time), pas le coucher
+        date_str = dt_wake.strftime("%Y-%m-%d")
 
-        awake_min   = max(0, duration - deep - light - rem)
+        awake_min   = raw.get("sleep_awake_duration", max(0, duration - deep - light - rem))
         sleep_score = calc_sleep_score(duration, deep, light, rem)
-        steps       = steps_by_date.get(date_str, 0)
+        # Clé UTC pour matcher sleep_day et steps_day (stockés en UTC midnight)
+        date_utc    = datetime.fromtimestamp(wake_up, tz=timezone.utc).strftime("%Y-%m-%d")
+        steps       = steps_by_date.get(date_utc, 0)
 
         items = raw.get("items", [])
 

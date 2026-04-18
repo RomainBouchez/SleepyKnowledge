@@ -14,6 +14,7 @@ interface MiSleepRaw {
   sleep_deep_duration?: number;
   sleep_light_duration?: number;
   sleep_rem_duration?: number;
+  sleep_awake_duration?: number;
   avg_hr?: number;
   min_hr?: number;
   max_hr?: number;
@@ -28,7 +29,9 @@ export interface SqliteParseResult {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function unixToDateStr(unix: number): string {
-  return new Date(unix * 1000).toISOString().split('T')[0];
+  const d = new Date(unix * 1000);
+  // Utilise l'heure locale (et non UTC) pour éviter les décalages de date en soirée/nuit
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function unixToTimeStr(unix: number): string {
@@ -55,19 +58,10 @@ function calcSleepScore(duration: number, deep: number, rem: number): number {
 }
 
 /**
- * Remapping états SQLite bruts → états app.
- * SQLite (Redmi Watch): 1=REM, 2=léger, 3=profond, 4=éveillé
- * App STAGE_CONFIG:     2=REM, 3=léger, 4=profond, 5=éveillé
+ * États dans ce DB (8292589056) :
+ * 2=REM, 3=léger, 4=profond, 5=éveillé
+ * Ces valeurs correspondent directement au STAGE_CONFIG — pas de remapping nécessaire.
  */
-function remapStage(s: number): number {
-  switch (s) {
-    case 1: return 2;
-    case 2: return 3;
-    case 3: return 4;
-    case 4: return 5;
-    default: return s;
-  }
-}
 
 // ── sql.js CDN loader ─────────────────────────────────────────────────────────
 
@@ -122,14 +116,31 @@ export async function parseMiFitnessDb(
 
   const db = new SQL.Database(new Uint8Array(buffer));
 
-  // Pas quotidiens → enrichir chaque nuit
+  // Pas quotidiens — `time` est une colonne (UTC midnight), `steps` est dans le JSON
   const stepsByDate = new Map<string, number>();
   try {
-    const res = db.exec('SELECT value FROM steps_day ORDER BY id');
+    const res = db.exec("SELECT time, value FROM steps_day WHERE deleted = 0 ORDER BY rowid");
     if (res.length > 0) {
       for (const row of res[0].values) {
-        const d = JSON.parse(row[0] as string);
-        if (d.time) stepsByDate.set(unixToDateStr(d.time), d.steps ?? 0);
+        const t = row[0] as number;
+        const d = JSON.parse(row[1] as string) as { steps?: number };
+        // `time` est un timestamp UTC en secondes → date UTC (cohérent avec sleep_day)
+        const date = new Date(t * 1000).toISOString().split('T')[0];
+        if (d.steps != null) stepsByDate.set(date, d.steps);
+      }
+    }
+  } catch { /* table absente = pas grave */ }
+
+  // Scores officiels Mi Fitness depuis sleep_day (meilleurs que notre calcul)
+  const scoreByDate = new Map<string, number>();
+  try {
+    const res = db.exec("SELECT time, value FROM sleep_day WHERE deleted = 0 ORDER BY rowid");
+    if (res.length > 0) {
+      for (const row of res[0].values) {
+        const t = row[0] as number;
+        const d = JSON.parse(row[1] as string) as { sleep_score?: number };
+        const date = new Date(t * 1000).toISOString().split('T')[0];
+        if (d.sleep_score != null) scoreByDate.set(date, d.sleep_score);
       }
     }
   } catch { /* table absente = pas grave */ }
@@ -137,7 +148,7 @@ export async function parseMiFitnessDb(
   onProgress(65);
 
   // Nuits de sommeil
-  const sleepRes = db.exec('SELECT value FROM sleep ORDER BY id');
+  const sleepRes = db.exec('SELECT value FROM sleep WHERE deleted = 0 ORDER BY rowid');
   const sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[] = [];
 
   if (sleepRes.length > 0) {
@@ -150,7 +161,13 @@ export async function parseMiFitnessDb(
         const deep  = raw.sleep_deep_duration  ?? 0;
         const light = raw.sleep_light_duration ?? 0;
         const rem   = raw.sleep_rem_duration   ?? 0;
-        const date  = unixToDateStr(raw.bedtime);
+        // `sleep_awake_duration` est directement dans le JSON (plus fiable que duration - phases)
+        const awake = raw.sleep_awake_duration ?? Math.max(0, raw.duration - deep - light - rem);
+
+        // Mi Fitness date une nuit par le jour du réveil (wake_up_time), pas le coucher
+        const date    = unixToDateStr(raw.wake_up_time);
+        // Date en UTC pour faire correspondre les clés sleep_day et steps_day (stockés en UTC)
+        const dateUtc = new Date(raw.wake_up_time * 1000).toISOString().split('T')[0];
 
         sleepRecords.push({
           date,
@@ -160,14 +177,15 @@ export async function parseMiFitnessDb(
           deep_sleep_min:    deep,
           light_sleep_min:   light,
           rem_sleep_min:     rem,
-          awake_min:         Math.max(0, raw.duration - deep - light - rem),
-          sleep_score:       calcSleepScore(raw.duration, deep, rem),
+          awake_min:         awake,
+          // Score officiel Mi Fitness en priorité, sinon notre calcul de fallback
+          sleep_score:       scoreByDate.get(dateUtc) ?? calcSleepScore(raw.duration, deep, rem),
           hr_avg:            raw.avg_hr ?? 0,
           hr_min:            raw.min_hr ?? 0,
           hr_max:            raw.max_hr ?? 0,
-          steps:             stepsByDate.get(date) ?? 0,
+          steps:             stepsByDate.get(dateUtc) ?? 0,
           sleep_stages_json: raw.items?.length
-            ? JSON.stringify(raw.items.map(it => ({ ...it, state: remapStage(it.state) })))
+            ? JSON.stringify(raw.items)
             : undefined,
         });
       } catch { /* ligne corrompue, skip */ }

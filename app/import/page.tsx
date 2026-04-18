@@ -6,6 +6,7 @@ import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
 import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
+import { parseMiFitnessDb } from '@/lib/sqlite-mi-parser';
 import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate } from '@/lib/db';
 import type { SleepRecord } from '@/lib/types';
 
@@ -18,6 +19,9 @@ interface ParsedData {
   sportRecords: SportRecord[];
   stats: { totalSleep: number; totalSport: number; dateRange: string };
 }
+
+const isZipFile = (name: string): boolean => name.toLowerCase().endsWith('.zip');
+const isDbFile = (name: string): boolean => name.toLowerCase().endsWith('.db');
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -96,14 +100,21 @@ export default function ImportPage() {
   // ── File selection ──────────────────────────────────────────────────────────
 
   const handleFile = (f: File) => {
-    if (!f.name.endsWith('.zip')) {
-      setError('Le fichier doit être un .zip');
+    if (!isZipFile(f.name) && !isDbFile(f.name)) {
+      setError('Le fichier doit être un .zip ou un .db');
       setStep('error');
       return;
     }
     setFile(f);
-    setStep('password');
     setError('');
+    setPassword('');
+
+    // Les exports ZIP peuvent être chiffrés; les .db non.
+    if (isDbFile(f.name)) {
+      void handleParseFile(f, '');
+      return;
+    }
+    setStep('password');
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,17 +131,41 @@ export default function ImportPage() {
 
   // ── Unzip + parse ──────────────────────────────────────────────────────────
 
-  const handleParse = async () => {
-    if (!file) return;
+  const handleParseFile = async (selectedFile: File, zipPassword: string) => {
     setStep('parsing');
     setProgress(0);
     setError('');
 
     try {
+      if (isDbFile(selectedFile.name)) {
+        const result = await parseMiFitnessDb(selectedFile, setProgress);
+        const parsedData: ParsedData = {
+          sleepRecords: result.sleepRecords,
+          sportRecords: [],
+          stats: {
+            totalSleep: result.stats.totalSleep,
+            totalSport: 0,
+            dateRange: result.stats.dateRange,
+          },
+        };
+
+        const candidateDates = parsedData.sleepRecords
+          .filter(r => !(r.sleep_score === 0 && r.duration_min === 0))
+          .map(r => r.date);
+        const allExisting = await getExistingDates();
+        const existing = candidateDates.filter(d => allExisting.has(d));
+        setOverlapDates(existing);
+        setOverwriteChecked(false);
+
+        setParsed(parsedData);
+        setStep('preview');
+        return;
+      }
+
       const { BlobReader, ZipReader, TextWriter } = await import('@zip.js/zip.js');
 
-      const reader = new ZipReader(new BlobReader(file), {
-        password: password || undefined,
+      const reader = new ZipReader(new BlobReader(selectedFile), {
+        password: zipPassword || undefined,
       });
 
       setProgress(20);
@@ -184,7 +219,10 @@ export default function ImportPage() {
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('password') || msg.includes('encrypted') || msg.includes('wrong password')) {
+      if (
+        isZipFile(selectedFile.name) &&
+        (msg.includes('password') || msg.includes('encrypted') || msg.includes('wrong password'))
+      ) {
         setError('Mot de passe incorrect. Réessaie.');
         setStep('password');
       } else {
@@ -192,6 +230,11 @@ export default function ImportPage() {
         setStep('error');
       }
     }
+  };
+
+  const handleParse = async () => {
+    if (!file) return;
+    await handleParseFile(file, password);
   };
 
   // ── Import into IndexedDB ──────────────────────────────────────────────────
@@ -260,12 +303,12 @@ export default function ImportPage() {
               `}
             >
               <div className="text-4xl mb-3">📦</div>
-              <p className="text-white font-medium mb-1">Dépose ton fichier ZIP ici</p>
-              <p className="text-sl-muted text-sm">ou clique pour sélectionner</p>
+              <p className="text-white font-medium mb-1">Dépose ton fichier Mi Fitness ici</p>
+              <p className="text-sl-muted text-sm">ZIP ou DB, ou clique pour sélectionner</p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".zip"
+                accept=".zip,.db"
                 onChange={onFileChange}
                 className="hidden"
               />
@@ -320,7 +363,7 @@ export default function ImportPage() {
                 onClick={handleParse}
                 className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors"
               >
-                Dézipper
+                Analyser
               </button>
             </div>
           </div>
@@ -502,7 +545,7 @@ export default function ImportPage() {
           ) : dbRecords.length === 0 ? (
             <div className="bg-sl-card rounded-2xl p-8 text-center">
               <div className="text-3xl mb-3">🗃️</div>
-              <p className="text-sl-muted text-sm">Aucune donnée en base.<br />Importe un fichier ZIP pour commencer.</p>
+              <p className="text-sl-muted text-sm">Aucune donnée en base.<br />Importe un fichier ZIP ou DB pour commencer.</p>
             </div>
           ) : (
             <>
@@ -543,12 +586,12 @@ export default function ImportPage() {
                     {/* Phases */}
                     <div className="text-xs space-y-0.5">
                       <div className="flex gap-1 items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#1e3a8a' }} />
                         <span className="text-sl-muted">Prof</span>
                         <span className="text-white ml-auto">{r.deep_sleep_min}m</span>
                       </div>
                       <div className="flex gap-1 items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 inline-block" />
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#7c3aed' }} />
                         <span className="text-sl-muted">REM</span>
                         <span className="text-white ml-auto">{r.rem_sleep_min}m</span>
                       </div>
@@ -694,9 +737,9 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
   const mins  = r.duration_min % 60;
 
   const phases = [
-    { name: 'Profond',  minutes: r.deep_sleep_min,  color: '#3b82f6' },
-    { name: 'Léger',    minutes: r.light_sleep_min, color: '#6366f1' },
-    { name: 'REM',      minutes: r.rem_sleep_min,   color: '#a855f7' },
+    { name: 'Profond',  minutes: r.deep_sleep_min,  color: '#1e3a8a' },
+    { name: 'Léger',    minutes: r.light_sleep_min, color: '#60a5fa' },
+    { name: 'REM',      minutes: r.rem_sleep_min,   color: '#7c3aed' },
     { name: 'Éveillé',  minutes: r.awake_min,       color: '#f97316' },
   ];
 
@@ -847,11 +890,13 @@ function MetricTile({ icon, label, value }: { icon: string; label: string; value
 
 // ── Sleep Timeline Chart ───────────────────────────────────────────────────────
 
+// États DB : 2=REM, 3=léger, 4=profond, 5=éveillé
+// Y=1 bas → Y=4 haut ; yPct = hauteur de la barre (plus grand = plus haute)
 const STAGE_CONFIG: Record<number, { color: string; gradientTop: string; yPct: number }> = {
-  4: { color: '#1e40af', gradientTop: '#1d4ed8', yPct: 0.28 }, // deep  – dark blue, low
-  3: { color: '#2563eb', gradientTop: '#3b82f6', yPct: 0.52 }, // light – blue, medium
-  2: { color: '#06b6d4', gradientTop: '#22d3ee', yPct: 0.72 }, // REM   – cyan, high
-  5: { color: '#f97316', gradientTop: '#fb923c', yPct: 0.96 }, // awake – orange, spike
+  4: { color: '#1e3a8a', gradientTop: '#1e40af', yPct: 0.25 }, // profond Y=1 – bleu foncé, barre basse
+  3: { color: '#60a5fa', gradientTop: '#93c5fd', yPct: 0.50 }, // léger   Y=2 – bleu clair
+  2: { color: '#7c3aed', gradientTop: '#a78bfa', yPct: 0.75 }, // REM     Y=3 – violet
+  5: { color: '#f97316', gradientTop: '#fb923c', yPct: 0.96 }, // éveillé Y=4 – orange, barre haute
 };
 
 function SleepTimelineChart({
@@ -902,8 +947,8 @@ function SleepTimelineChart({
         {/* Background */}
         <rect x="0" y="0" width={W} height={H} fill="#0f172a" rx="8" />
 
-        {/* Horizontal guide lines */}
-        {[0.28, 0.52, 0.72].map((pct, i) => (
+        {/* Horizontal guide lines alignées sur les 4 niveaux */}
+        {[0.25, 0.50, 0.75].map((pct, i) => (
           <line
             key={i}
             x1="0" y1={H - pct * H}
