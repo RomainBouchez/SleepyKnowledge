@@ -1,13 +1,20 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  FolderOpen, Lock, Settings, HardDrive, CheckCircle2,
+  AlertTriangle, Database, Check, RefreshCw, Moon, Dumbbell,
+  Footprints, Clock, Waves, Brain,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { SleepStageItem } from '@/lib/types';
 import Navigation from '@/components/Navigation';
 import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
-import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate } from '@/lib/db';
-import type { SleepRecord } from '@/lib/types';
+import { parseMiFitnessDb } from '@/lib/sqlite-mi-parser';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate, getLifestyleLogByDate, upsertLifestyleLog } from '@/lib/db';
+import type { SleepRecord, LifestyleLog } from '@/lib/types';
+import LifestyleForm from '@/components/LifestyleForm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +25,9 @@ interface ParsedData {
   sportRecords: SportRecord[];
   stats: { totalSleep: number; totalSport: number; dateRange: string };
 }
+
+const isZipFile = (name: string): boolean => name.toLowerCase().endsWith('.zip');
+const isDbFile = (name: string): boolean => name.toLowerCase().endsWith('.db');
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -96,14 +106,21 @@ export default function ImportPage() {
   // ── File selection ──────────────────────────────────────────────────────────
 
   const handleFile = (f: File) => {
-    if (!f.name.endsWith('.zip')) {
-      setError('Le fichier doit être un .zip');
+    if (!isZipFile(f.name) && !isDbFile(f.name)) {
+      setError('Le fichier doit être un .zip ou un .db');
       setStep('error');
       return;
     }
     setFile(f);
-    setStep('password');
     setError('');
+    setPassword('');
+
+    // Les exports ZIP peuvent être chiffrés; les .db non.
+    if (isDbFile(f.name)) {
+      void handleParseFile(f, '');
+      return;
+    }
+    setStep('password');
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -120,17 +137,41 @@ export default function ImportPage() {
 
   // ── Unzip + parse ──────────────────────────────────────────────────────────
 
-  const handleParse = async () => {
-    if (!file) return;
+  const handleParseFile = async (selectedFile: File, zipPassword: string) => {
     setStep('parsing');
     setProgress(0);
     setError('');
 
     try {
+      if (isDbFile(selectedFile.name)) {
+        const result = await parseMiFitnessDb(selectedFile, setProgress);
+        const parsedData: ParsedData = {
+          sleepRecords: result.sleepRecords,
+          sportRecords: [],
+          stats: {
+            totalSleep: result.stats.totalSleep,
+            totalSport: 0,
+            dateRange: result.stats.dateRange,
+          },
+        };
+
+        const candidateDates = parsedData.sleepRecords
+          .filter(r => !(r.sleep_score === 0 && r.duration_min === 0))
+          .map(r => r.date);
+        const allExisting = await getExistingDates();
+        const existing = candidateDates.filter(d => allExisting.has(d));
+        setOverlapDates(existing);
+        setOverwriteChecked(false);
+
+        setParsed(parsedData);
+        setStep('preview');
+        return;
+      }
+
       const { BlobReader, ZipReader, TextWriter } = await import('@zip.js/zip.js');
 
-      const reader = new ZipReader(new BlobReader(file), {
-        password: password || undefined,
+      const reader = new ZipReader(new BlobReader(selectedFile), {
+        password: zipPassword || undefined,
       });
 
       setProgress(20);
@@ -184,7 +225,10 @@ export default function ImportPage() {
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('password') || msg.includes('encrypted') || msg.includes('wrong password')) {
+      if (
+        isZipFile(selectedFile.name) &&
+        (msg.includes('password') || msg.includes('encrypted') || msg.includes('wrong password'))
+      ) {
         setError('Mot de passe incorrect. Réessaie.');
         setStep('password');
       } else {
@@ -192,6 +236,11 @@ export default function ImportPage() {
         setStep('error');
       }
     }
+  };
+
+  const handleParse = async () => {
+    if (!file) return;
+    await handleParseFile(file, password);
   };
 
   // ── Import into IndexedDB ──────────────────────────────────────────────────
@@ -259,13 +308,13 @@ export default function ImportPage() {
                   : 'border-sl-border hover:border-sl-accent/50 bg-sl-card'}
               `}
             >
-              <div className="text-4xl mb-3">📦</div>
-              <p className="text-white font-medium mb-1">Dépose ton fichier ZIP ici</p>
-              <p className="text-sl-muted text-sm">ou clique pour sélectionner</p>
+              <FolderOpen size={40} strokeWidth={1.5} className="mb-3" style={{ color: '#ff6b35' }} />
+              <p className="text-white font-medium mb-1">Dépose ton fichier Mi Fitness ici</p>
+              <p className="text-sl-muted text-sm">ZIP ou DB, ou clique pour sélectionner</p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".zip"
+                accept=".zip,.db,application/zip,application/x-zip-compressed,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
                 onChange={onFileChange}
                 className="hidden"
               />
@@ -283,7 +332,7 @@ export default function ImportPage() {
         {step === 'password' && (
           <div className="bg-sl-card rounded-2xl p-6 space-y-5">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🔐</span>
+              <Lock size={24} strokeWidth={1.8} style={{ color: '#ff6b35', flexShrink: 0 }} />
               <div>
                 <p className="text-white font-medium">{file?.name}</p>
                 <p className="text-sl-muted text-xs">
@@ -320,7 +369,7 @@ export default function ImportPage() {
                 onClick={handleParse}
                 className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors"
               >
-                Dézipper
+                Analyser
               </button>
             </div>
           </div>
@@ -329,7 +378,7 @@ export default function ImportPage() {
         {/* ── STEP: parsing ── */}
         {step === 'parsing' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-4">
-            <div className="text-3xl animate-pulse">⚙️</div>
+            <Settings size={32} strokeWidth={1.5} className="animate-spin mb-1" style={{ color: '#ff6b35' }} />
             <p className="text-white font-medium">Déchiffrement en cours…</p>
             <ProgressBar value={progress} />
             <p className="text-sl-muted text-sm">{progress}%</p>
@@ -343,8 +392,8 @@ export default function ImportPage() {
               <h2 className="text-white font-semibold text-lg">Aperçu des données</h2>
 
               <div className="grid grid-cols-2 gap-3">
-                <StatBox label="Nuits de sommeil" value={parsed.stats.totalSleep} icon="🌙" />
-                <StatBox label="Séances sport" value={parsed.stats.totalSport} icon="🏋️" />
+                <StatBox label="Nuits de sommeil" value={parsed.stats.totalSleep} icon={<Moon size={22} strokeWidth={1.5} style={{ color: '#ff6b35' }} />} />
+                <StatBox label="Séances sport" value={parsed.stats.totalSport} icon={<Dumbbell size={22} strokeWidth={1.5} style={{ color: '#ff9955' }} />} />
               </div>
 
               <div className="bg-sl-bg rounded-xl p-4">
@@ -369,7 +418,7 @@ export default function ImportPage() {
             {overlapDates.length > 0 && (
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 space-y-3">
                 <div className="flex items-start gap-2">
-                  <span className="text-yellow-400 text-lg leading-none">⚠️</span>
+                  <AlertTriangle size={18} strokeWidth={2} style={{ color: '#facc15', flexShrink: 0 }} />
                   <div>
                     <p className="text-yellow-300 text-sm font-medium">
                       {overlapDates.length} nuit{overlapDates.length > 1 ? 's' : ''} déjà en base
@@ -414,7 +463,7 @@ export default function ImportPage() {
         {/* ── STEP: importing ── */}
         {step === 'importing' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-4">
-            <div className="text-3xl animate-pulse">💾</div>
+            <HardDrive size={32} strokeWidth={1.5} className="animate-pulse mb-1" style={{ color: '#ff6b35' }} />
             <p className="text-white font-medium">Import en cours…</p>
             <ProgressBar value={progress} />
             <p className="text-sl-muted text-sm">{progress}%</p>
@@ -424,7 +473,7 @@ export default function ImportPage() {
         {/* ── STEP: done ── */}
         {step === 'done' && (
           <div className="bg-sl-card rounded-2xl p-8 text-center space-y-5">
-            <div className="text-5xl">✅</div>
+            <CheckCircle2 size={52} strokeWidth={1.5} style={{ color: '#4caf78' }} />
             <div>
               <p className="text-white font-bold text-xl mb-1">Import terminé !</p>
               <p className="text-sl-muted text-sm">
@@ -481,9 +530,9 @@ export default function ImportPage() {
                 </button>
                 <button
                   onClick={() => loadDbRecords(dbLimit)}
-                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity"
+                  className="text-sl-accent text-sm hover:opacity-70 transition-opacity flex items-center gap-1"
                 >
-                  ↻ Rafraîchir
+                  <RefreshCw size={13} strokeWidth={2} /> Rafraîchir
                 </button>
                 {dbRecords.length > 0 && (
                   <button
@@ -501,8 +550,8 @@ export default function ImportPage() {
             <div className="text-center py-8 text-sl-muted text-sm">Chargement…</div>
           ) : dbRecords.length === 0 ? (
             <div className="bg-sl-card rounded-2xl p-8 text-center">
-              <div className="text-3xl mb-3">🗃️</div>
-              <p className="text-sl-muted text-sm">Aucune donnée en base.<br />Importe un fichier ZIP pour commencer.</p>
+              <Database size={32} strokeWidth={1.5} className="mb-3" style={{ color: '#7a6e6a' }} />
+              <p className="text-sl-muted text-sm">Aucune donnée en base.<br />Importe un fichier ZIP ou DB pour commencer.</p>
             </div>
           ) : (
             <>
@@ -526,7 +575,7 @@ export default function ImportPage() {
                     {selectionMode && (
                       <div className="flex items-center justify-center">
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checkedDates.has(r.date) ? 'bg-sl-accent border-sl-accent' : 'border-sl-border'}`}>
-                          {checkedDates.has(r.date) && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+                          {checkedDates.has(r.date) && <Check size={10} strokeWidth={3} style={{ color: '#fff' }} />}
                         </div>
                       </div>
                     )}
@@ -543,12 +592,12 @@ export default function ImportPage() {
                     {/* Phases */}
                     <div className="text-xs space-y-0.5">
                       <div className="flex gap-1 items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#1e3a8a' }} />
                         <span className="text-sl-muted">Prof</span>
                         <span className="text-white ml-auto">{r.deep_sleep_min}m</span>
                       </div>
                       <div className="flex gap-1 items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 inline-block" />
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#7c3aed' }} />
                         <span className="text-sl-muted">REM</span>
                         <span className="text-white ml-auto">{r.rem_sleep_min}m</span>
                       </div>
@@ -676,10 +725,10 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-function StatBox({ label, value, icon }: { label: string; value: number; icon: string }) {
+function StatBox({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   return (
     <div className="bg-sl-bg rounded-xl p-4 text-center">
-      <div className="text-2xl mb-1">{icon}</div>
+      <div className="flex justify-center mb-1">{icon}</div>
       <div className="text-white font-bold text-xl">{value}</div>
       <div className="text-sl-muted text-xs">{label}</div>
     </div>
@@ -693,10 +742,17 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
   const hours = Math.floor(r.duration_min / 60);
   const mins  = r.duration_min % 60;
 
+  const [showLifestyle, setShowLifestyle] = useState(false);
+  const [lifestyleLog, setLifestyleLog] = useState<LifestyleLog | null>(null);
+
+  useEffect(() => {
+    getLifestyleLogByDate(r.date).then(setLifestyleLog);
+  }, [r.date]);
+
   const phases = [
-    { name: 'Profond',  minutes: r.deep_sleep_min,  color: '#3b82f6' },
-    { name: 'Léger',    minutes: r.light_sleep_min, color: '#6366f1' },
-    { name: 'REM',      minutes: r.rem_sleep_min,   color: '#a855f7' },
+    { name: 'Profond',  minutes: r.deep_sleep_min,  color: '#1e3a8a' },
+    { name: 'Léger',    minutes: r.light_sleep_min, color: '#60a5fa' },
+    { name: 'REM',      minutes: r.rem_sleep_min,   color: '#7c3aed' },
     { name: 'Éveillé',  minutes: r.awake_min,       color: '#f97316' },
   ];
 
@@ -732,9 +788,23 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
               </h2>
               <p className="text-sl-muted text-sm">{hours}h{String(mins).padStart(2, '0')} de sommeil</p>
             </div>
-            <div className="text-right">
-              <p className="text-3xl font-black" style={{ color: scoreColor }}>{r.sleep_score}</p>
-              <p className="text-sl-muted text-xs">/ 100</p>
+            <div className="flex flex-col items-end gap-2">
+              <div className="text-right">
+                <p className="text-3xl font-black" style={{ color: scoreColor }}>{r.sleep_score}</p>
+                <p className="text-sl-muted text-xs">/ 100</p>
+              </div>
+              <button
+                onClick={() => setShowLifestyle(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{
+                  background: lifestyleLog ? 'rgba(76,175,120,0.15)' : 'rgba(255,107,53,0.15)',
+                  border: `1px solid ${lifestyleLog ? 'rgba(76,175,120,0.4)' : 'rgba(255,107,53,0.4)'}`,
+                  color: lifestyleLog ? '#4caf78' : '#ff6b35',
+                }}
+              >
+                <span>{lifestyleLog ? '✓' : '✎'}</span>
+                <span>Lifestyle</span>
+              </button>
             </div>
           </div>
 
@@ -814,10 +884,10 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
 
           {/* ── Autres métriques ── */}
           <div className="grid grid-cols-2 gap-3">
-            <MetricTile icon="👟" label="Pas" value={r.steps.toLocaleString('fr-FR')} />
-            <MetricTile icon="⏱️" label="Éveillé" value={`${r.awake_min} min`} />
-            <MetricTile icon="🌊" label="Sommeil profond" value={`${Math.round((r.deep_sleep_min / totalPhases) * 100)}%`} />
-            <MetricTile icon="🌀" label="REM" value={`${Math.round((r.rem_sleep_min / totalPhases) * 100)}%`} />
+          <MetricTile icon={<Footprints size={20} strokeWidth={1.8} />} label="Pas" value={r.steps.toLocaleString('fr-FR')} />
+          <MetricTile icon={<Clock size={20} strokeWidth={1.8} />} label="Éveillé" value={`${r.awake_min} min`} />
+          <MetricTile icon={<Waves size={20} strokeWidth={1.8} />} label="Sommeil profond" value={`${Math.round((r.deep_sleep_min / totalPhases) * 100)}%`} />
+          <MetricTile icon={<Brain size={20} strokeWidth={1.8} />} label="REM" value={`${Math.round((r.rem_sleep_min / totalPhases) * 100)}%`} />
           </div>
 
           {/* Bouton fermer */}
@@ -829,14 +899,26 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
           </button>
         </div>
       </div>
+
+      <LifestyleForm
+        visible={showLifestyle}
+        initial={lifestyleLog ? { ...lifestyleLog, date: r.date } : null}
+        todaySteps={r.steps}
+        onSave={async log => {
+          const logWithDate = { ...log, date: r.date };
+          await upsertLifestyleLog(logWithDate);
+          setLifestyleLog(await getLifestyleLogByDate(r.date));
+        }}
+        onClose={() => setShowLifestyle(false)}
+      />
     </>
   );
 }
 
-function MetricTile({ icon, label, value }: { icon: string; label: string; value: string }) {
+function MetricTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="bg-sl-card rounded-xl p-4 flex items-center gap-3">
-      <span className="text-xl">{icon}</span>
+      <span style={{ color: '#ff9955', flexShrink: 0 }}>{icon}</span>
       <div>
         <p className="text-white font-semibold text-sm">{value}</p>
         <p className="text-sl-muted text-xs">{label}</p>
@@ -847,11 +929,13 @@ function MetricTile({ icon, label, value }: { icon: string; label: string; value
 
 // ── Sleep Timeline Chart ───────────────────────────────────────────────────────
 
+// États DB : 2=REM, 3=léger, 4=profond, 5=éveillé
+// Y=1 bas → Y=4 haut ; yPct = hauteur de la barre (plus grand = plus haute)
 const STAGE_CONFIG: Record<number, { color: string; gradientTop: string; yPct: number }> = {
-  4: { color: '#1e40af', gradientTop: '#1d4ed8', yPct: 0.28 }, // deep  – dark blue, low
-  3: { color: '#2563eb', gradientTop: '#3b82f6', yPct: 0.52 }, // light – blue, medium
-  2: { color: '#06b6d4', gradientTop: '#22d3ee', yPct: 0.72 }, // REM   – cyan, high
-  5: { color: '#f97316', gradientTop: '#fb923c', yPct: 0.96 }, // awake – orange, spike
+  4: { color: '#1e3a8a', gradientTop: '#1e40af', yPct: 0.25 }, // profond Y=1 – bleu foncé, barre basse
+  3: { color: '#60a5fa', gradientTop: '#93c5fd', yPct: 0.50 }, // léger   Y=2 – bleu clair
+  2: { color: '#7c3aed', gradientTop: '#a78bfa', yPct: 0.75 }, // REM     Y=3 – violet
+  5: { color: '#f97316', gradientTop: '#fb923c', yPct: 0.96 }, // éveillé Y=4 – orange, barre haute
 };
 
 function SleepTimelineChart({
@@ -902,8 +986,8 @@ function SleepTimelineChart({
         {/* Background */}
         <rect x="0" y="0" width={W} height={H} fill="#0f172a" rx="8" />
 
-        {/* Horizontal guide lines */}
-        {[0.28, 0.52, 0.72].map((pct, i) => (
+        {/* Horizontal guide lines alignées sur les 4 niveaux */}
+        {[0.25, 0.50, 0.75].map((pct, i) => (
           <line
             key={i}
             x1="0" y1={H - pct * H}

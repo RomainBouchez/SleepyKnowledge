@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { BarChart2, Coffee, Leaf, Dumbbell, UtensilsCrossed, TrendingUp, TrendingDown } from 'lucide-react';
 import {
   AreaChart, Area, LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
@@ -86,16 +87,18 @@ export default function PatternsPage() {
   }
 
   const corrs = [
-    buildCorr('☕ Caféine → Deep sleep', 'Caféine (mg)', 'Deep sleep (%)', '#ff6b35',
+    buildCorr('Caféine → Deep sleep', 'Caféine (mg)', 'Deep sleep (%)', '#ff6b35',
       l => l.caffeine_mg, r => pct(r.deep_sleep_min, r.duration_min)),
-    buildCorr('🌿 Weed → REM', 'Weed (0/1)', 'REM (%)', '#ffb040',
+    buildCorr('Weed → REM', 'Weed (0/1)', 'REM (%)', '#ffb040',
       l => l.weed ? 1 : 0, r => pct(r.rem_sleep_min, r.duration_min)),
-    buildCorr('🏋️ Intensité sport → Score', 'Intensité (1–10)', 'Score', '#4caf78',
+    buildCorr('Intensité sport → Score', 'Intensité (1–10)', 'Score', '#4caf78',
       l => l.sport_intensity, r => r.sleep_score),
-    buildCorr('🍽️ Repas → FC nocturne', 'Repas (1=léger,3=lourd)', 'FC moy (bpm)', '#ff9955',
+    buildCorr('Repas → FC nocturne', 'Repas (1=léger,3=lourd)', 'FC moy (bpm)', '#ff9955',
       l => l.meal_heaviness === 'léger' ? 1 : l.meal_heaviness === 'normal' ? 2 : 3,
       r => r.hr_avg),
   ];
+
+  const CORR_ICONS = [Coffee, Leaf, Dumbbell, UtensilsCrossed];
 
   const topFactors = [...corrs].filter(c => c.pts.length >= 5).sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
 
@@ -106,7 +109,7 @@ export default function PatternsPage() {
   if (sleep.length < 3) {
     return (
       <div className="flex flex-col items-center justify-center h-screen text-center px-8">
-        <span className="text-5xl mb-4">📊</span>
+        <BarChart2 size={48} strokeWidth={1.5} className="mb-4" style={{ color: '#7a6e6a' }} />
         <p className="text-sm leading-relaxed" style={{ color: '#7a6e6a' }}>
           Pas assez de données.<br />Synchronise quelques nuits d'abord.
         </p>
@@ -180,8 +183,9 @@ export default function PatternsPage() {
       {/* ── Correlations ───────────────────────────────────────────── */}
       <p className="section-label pt-2">Corrélations lifestyle → sommeil</p>
 
-      {corrs.map((c, i) => (
-        <ChartCard key={i} title={c.title}>
+      {corrs.map((c, i) => {
+        const CorrIcon = CORR_ICONS[i];
+        return <ChartCard key={i} title={c.title} icon={<CorrIcon size={14} strokeWidth={2} style={{ color: c.color }} />}>
           {c.pts.length < 5 ? (
             <p className="text-xs italic py-2" style={{ color: '#3d3330' }}>Pas assez de données (min. 5 nuits)</p>
           ) : (
@@ -205,7 +209,7 @@ export default function PatternsPage() {
             </>
           )}
         </ChartCard>
-      ))}
+      })}
 
       {/* ── Top factors ────────────────────────────────────────────── */}
       {topFactors.length > 0 && (
@@ -219,8 +223,8 @@ export default function PatternsPage() {
                   <p className="text-sm font-bold" style={{ color: '#f0ebe6' }}>{f.title}</p>
                   <p className="text-xs mt-0.5" style={{ color: '#7a6e6a' }}>{corrLabel(f.r)} (r={f.r.toFixed(2)})</p>
                 </div>
-                <span className="font-bold" style={{ color: f.r >= 0 ? '#4caf78' : '#e05a4a' }}>
-                  {f.r >= 0 ? '▲' : '▼'}
+                <span className="font-bold" style={{ color: f.r >= 0 ? '#4caf78' : '#e05a4a', display: 'flex' }}>
+                  {f.r >= 0 ? <TrendingUp size={14} strokeWidth={2.5} /> : <TrendingDown size={14} strokeWidth={2.5} />}
                 </span>
               </div>
             ))}
@@ -233,10 +237,13 @@ export default function PatternsPage() {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="card" style={{ background: '#131110', borderColor: '#2a2320' }}>
-      <p className="section-label mb-3">{title}</p>
+      <div className="flex items-center gap-2 mb-3">
+        {icon}
+        <p className="section-label">{title}</p>
+      </div>
       {children}
     </div>
   );

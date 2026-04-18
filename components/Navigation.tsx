@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Moon, Bot, TrendingUp, FileText, Upload } from 'lucide-react';
 
 const TABS = [
-  { href: '/',         label: 'Nuit',    icon: '⌀' },
-  { href: '/chat',     label: 'Coach',   icon: '◈' },
-  { href: '/patterns', label: 'Trends',  icon: '◉' },
-  { href: '/report',   label: 'Rapport', icon: '▦' },
-  { href: '/import',   label: 'Import',  icon: '⇩' },
-  { href: '/sync',     label: 'Sync',    icon: '⇄' },
+  { href: '/',         label: 'Nuit',    Icon: Moon       },
+  { href: '/chat',     label: 'Coach',   Icon: Bot        },
+  { href: '/patterns', label: 'Trends',  Icon: TrendingUp },
+  { href: '/report',   label: 'Rapport', Icon: FileText   },
+  { href: '/import',   label: 'Import',  Icon: Upload     },
 ];
 
 const N = TABS.length;
@@ -43,13 +43,7 @@ export default function Navigation() {
           ].join(', '),
         }}>
 
-        {/* ── Sliding orange pill ──
-             Le dock a p-1.5 (6px) de padding de chaque côté.
-             Zone intérieure = 100% - 12px, répartie en N tabs égaux.
-             Pilule width  = calc((100% - 12px) / N)
-             Pilule left   = 6px  (colle au premier tab)
-             Glissement    = translateX(activeIdx * 100%)
-                             → 100% ici = own width = un tab exactement        */}
+        {/* Sliding orange pill */}
         <div
           aria-hidden
           className="absolute rounded-full pointer-events-none"
@@ -69,7 +63,7 @@ export default function Navigation() {
           }}
         />
 
-        {/* ── Tabs ── */}
+        {/* Tabs */}
         {TABS.map((tab, i) => {
           const active = i === activeIdx;
           return (
@@ -78,19 +72,16 @@ export default function Navigation() {
               href={tab.href}
               className="relative z-10 flex-1 flex flex-col items-center justify-center gap-1 py-1.5 rounded-full active:scale-90 transition-transform duration-150">
 
-              <span
-                className="text-lg leading-none"
+              <tab.Icon
+                size={18}
+                strokeWidth={active ? 2.5 : 1.8}
                 style={{
                   color: active ? '#ff6b35' : 'rgba(255,255,255,0.28)',
-                  textShadow: active
-                    ? '0 0 14px rgba(255,107,53,0.9), 0 0 28px rgba(255,107,53,0.45)'
-                    : 'none',
+                  filter: active ? 'drop-shadow(0 0 6px rgba(255,107,53,0.8))' : 'none',
                   transform: active ? 'scale(1.12)' : 'scale(1)',
-                  transition: 'color 0.25s, transform 0.25s, text-shadow 0.25s',
-                  display: 'block',
-                }}>
-                {tab.icon}
-              </span>
+                  transition: 'color 0.25s, transform 0.25s, filter 0.25s',
+                }}
+              />
 
               <span
                 className="text-[8px] font-black tracking-widest uppercase leading-none"
