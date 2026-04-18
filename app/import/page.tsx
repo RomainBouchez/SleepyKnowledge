@@ -7,8 +7,9 @@ import Navigation from '@/components/Navigation';
 import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
 import { parseMiFitnessDb } from '@/lib/sqlite-mi-parser';
-import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate } from '@/lib/db';
-import type { SleepRecord } from '@/lib/types';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate, getLifestyleLogByDate, upsertLifestyleLog } from '@/lib/db';
+import type { SleepRecord, LifestyleLog } from '@/lib/types';
+import LifestyleForm from '@/components/LifestyleForm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -736,6 +737,13 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
   const hours = Math.floor(r.duration_min / 60);
   const mins  = r.duration_min % 60;
 
+  const [showLifestyle, setShowLifestyle] = useState(false);
+  const [lifestyleLog, setLifestyleLog] = useState<LifestyleLog | null>(null);
+
+  useEffect(() => {
+    getLifestyleLogByDate(r.date).then(setLifestyleLog);
+  }, [r.date]);
+
   const phases = [
     { name: 'Profond',  minutes: r.deep_sleep_min,  color: '#1e3a8a' },
     { name: 'Léger',    minutes: r.light_sleep_min, color: '#60a5fa' },
@@ -775,9 +783,23 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
               </h2>
               <p className="text-sl-muted text-sm">{hours}h{String(mins).padStart(2, '0')} de sommeil</p>
             </div>
-            <div className="text-right">
-              <p className="text-3xl font-black" style={{ color: scoreColor }}>{r.sleep_score}</p>
-              <p className="text-sl-muted text-xs">/ 100</p>
+            <div className="flex flex-col items-end gap-2">
+              <div className="text-right">
+                <p className="text-3xl font-black" style={{ color: scoreColor }}>{r.sleep_score}</p>
+                <p className="text-sl-muted text-xs">/ 100</p>
+              </div>
+              <button
+                onClick={() => setShowLifestyle(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{
+                  background: lifestyleLog ? 'rgba(76,175,120,0.15)' : 'rgba(255,107,53,0.15)',
+                  border: `1px solid ${lifestyleLog ? 'rgba(76,175,120,0.4)' : 'rgba(255,107,53,0.4)'}`,
+                  color: lifestyleLog ? '#4caf78' : '#ff6b35',
+                }}
+              >
+                <span>{lifestyleLog ? '✓' : '✎'}</span>
+                <span>Lifestyle</span>
+              </button>
             </div>
           </div>
 
@@ -872,6 +894,18 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
           </button>
         </div>
       </div>
+
+      <LifestyleForm
+        visible={showLifestyle}
+        initial={lifestyleLog ? { ...lifestyleLog, date: r.date } : null}
+        todaySteps={r.steps}
+        onSave={async log => {
+          const logWithDate = { ...log, date: r.date };
+          await upsertLifestyleLog(logWithDate);
+          setLifestyleLog(await getLifestyleLogByDate(r.date));
+        }}
+        onClose={() => setShowLifestyle(false)}
+      />
     </>
   );
 }
