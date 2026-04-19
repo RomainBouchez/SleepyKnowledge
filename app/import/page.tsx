@@ -23,6 +23,7 @@ type Step = 'idle' | 'password' | 'parsing' | 'preview' | 'importing' | 'done' |
 interface ParsedData {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
   sportRecords: SportRecord[];
+  naps: { date: string; duration_min: number; sleep_start: string; sleep_end: string }[];
   stats: { totalSleep: number; totalSport: number; filteredCount: number; dateRange: string };
 }
 
@@ -163,6 +164,7 @@ export default function ImportPage() {
         const parsedData: ParsedData = {
           sleepRecords: result.sleepRecords,
           sportRecords: [],
+          naps:         result.naps,
           stats: {
             totalSleep:    result.stats.totalSleep,
             totalSport:    0,
@@ -236,7 +238,7 @@ export default function ImportPage() {
       setOverlapDates(existing);
       setOverwriteChecked(false);
 
-      setParsed({ ...result, stats: { ...result.stats, filteredCount: 0 } });
+      setParsed({ ...result, naps: [], stats: { ...result.stats, filteredCount: 0 } });
       setStep('preview');
 
     } catch (err: unknown) {
@@ -421,13 +423,21 @@ export default function ImportPage() {
                 <p className="text-white text-sm font-medium">{parsed.stats.dateRange}</p>
               </div>
 
-              {parsed.stats.filteredCount > 0 && (
-                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sl-bg border border-sl-border">
-                  <AlertTriangle size={15} strokeWidth={2} style={{ color: '#94a3b8', flexShrink: 0 }} />
-                  <p className="text-sl-muted text-xs">
-                    <span className="text-white font-medium">{parsed.stats.filteredCount} nuit{parsed.stats.filteredCount > 1 ? 's' : ''}</span>
-                    {' '}ignorée{parsed.stats.filteredCount > 1 ? 's' : ''} — durée &lt; 2h (sieste ou capteur non porté)
+              {parsed.naps.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sl-muted text-xs uppercase tracking-wider">
+                    {parsed.naps.length} sieste{parsed.naps.length > 1 ? 's' : ''} détectée{parsed.naps.length > 1 ? 's' : ''} — non importée{parsed.naps.length > 1 ? 's' : ''}
                   </p>
+                  <div className="flex flex-wrap gap-2">
+                    {parsed.naps.map((n, i) => (
+                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sl-bg border border-sl-border">
+                        <span className="text-sl-muted text-xs">{n.date}</span>
+                        <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>{n.sleep_start}→{n.sleep_end}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#ffb040' }}>{n.duration_min}m</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040', letterSpacing: '0.05em' }}>sieste</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

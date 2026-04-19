@@ -21,8 +21,16 @@ interface MiSleepRaw {
   items?: Array<{ start_time: number; end_time: number; state: number }>;
 }
 
+export interface NapRecord {
+  date: string;
+  duration_min: number;
+  sleep_start: string;
+  sleep_end: string;
+}
+
 export interface SqliteParseResult {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
+  naps: NapRecord[];
   stats: { totalSleep: number; filteredCount: number; dateRange: string };
 }
 
@@ -215,6 +223,7 @@ export async function parseMiFitnessDb(
   // Nuits de sommeil
   const sleepRes = db.exec('SELECT value FROM sleep WHERE deleted = 0 ORDER BY rowid');
   const sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[] = [];
+  const naps: NapRecord[] = [];
   let filteredCount = 0;
 
   if (sleepRes.length > 0) {
@@ -224,8 +233,20 @@ export async function parseMiFitnessDb(
         const raw: MiSleepRaw = JSON.parse(row[0] as string);
         if (!raw.bedtime || !raw.wake_up_time || !raw.duration) return;
 
-        // Filtrer les nuits trop courtes (sieste, capteur non porté, etc.)
-        if (raw.duration < MIN_SLEEP_MIN) { filteredCount++; return; }
+        // Nuits trop courtes → sieste si coucher entre 12h et 21h, sinon fragment silencieux
+        if (raw.duration < MIN_SLEEP_MIN) {
+          filteredCount++;
+          const bedHour = new Date(raw.bedtime * 1000).getHours();
+          if (bedHour >= 12 && bedHour < 21) {
+            naps.push({
+              date:         unixToDateStr(raw.wake_up_time),
+              duration_min: raw.duration,
+              sleep_start:  unixToTimeStr(raw.bedtime),
+              sleep_end:    unixToTimeStr(raw.wake_up_time),
+            });
+          }
+          return;
+        }
 
         const deep  = raw.sleep_deep_duration  ?? 0;
         const light = raw.sleep_light_duration ?? 0;
@@ -265,11 +286,22 @@ export async function parseMiFitnessDb(
   db.close();
   onProgress(100);
 
-  const dates = sleepRecords.map(r => r.date).sort();
+  // Dédoublonner par date : même date = sieste + vraie nuit → garder la plus longue
+  const byDate = new Map<string, Omit<SleepRecord, 'id' | 'imported_at'>>();
+  for (const r of sleepRecords) {
+    const existing = byDate.get(r.date);
+    if (!existing || r.duration_min > existing.duration_min) {
+      byDate.set(r.date, r);
+    }
+  }
+  const deduped = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  const dates = deduped.map(r => r.date);
   return {
-    sleepRecords,
+    sleepRecords: deduped,
+    naps,
     stats: {
-      totalSleep:    sleepRecords.length,
+      totalSleep:    deduped.length,
       filteredCount,
       dateRange:     dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : 'aucune',
     },
