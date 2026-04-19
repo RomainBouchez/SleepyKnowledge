@@ -23,7 +23,7 @@ type Step = 'idle' | 'password' | 'parsing' | 'preview' | 'importing' | 'done' |
 interface ParsedData {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
   sportRecords: SportRecord[];
-  stats: { totalSleep: number; totalSport: number; dateRange: string };
+  stats: { totalSleep: number; totalSport: number; filteredCount: number; dateRange: string };
 }
 
 const isZipFile = (name: string): boolean => name.toLowerCase().endsWith('.zip');
@@ -164,9 +164,10 @@ export default function ImportPage() {
           sleepRecords: result.sleepRecords,
           sportRecords: [],
           stats: {
-            totalSleep: result.stats.totalSleep,
-            totalSport: 0,
-            dateRange: result.stats.dateRange,
+            totalSleep:    result.stats.totalSleep,
+            totalSport:    0,
+            filteredCount: result.stats.filteredCount,
+            dateRange:     result.stats.dateRange,
           },
         };
 
@@ -235,7 +236,7 @@ export default function ImportPage() {
       setOverlapDates(existing);
       setOverwriteChecked(false);
 
-      setParsed(result);
+      setParsed({ ...result, stats: { ...result.stats, filteredCount: 0 } });
       setStep('preview');
 
     } catch (err: unknown) {
@@ -419,6 +420,16 @@ export default function ImportPage() {
                 <p className="text-sl-muted text-xs mb-1">Période couverte</p>
                 <p className="text-white text-sm font-medium">{parsed.stats.dateRange}</p>
               </div>
+
+              {parsed.stats.filteredCount > 0 && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sl-bg border border-sl-border">
+                  <AlertTriangle size={15} strokeWidth={2} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                  <p className="text-sl-muted text-xs">
+                    <span className="text-white font-medium">{parsed.stats.filteredCount} nuit{parsed.stats.filteredCount > 1 ? 's' : ''}</span>
+                    {' '}ignorée{parsed.stats.filteredCount > 1 ? 's' : ''} — durée &lt; 2h (sieste ou capteur non porté)
+                  </p>
+                </div>
+              )}
 
               {parsed.sleepRecords.length > 0 && (
                 <div className="space-y-2">

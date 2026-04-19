@@ -23,8 +23,11 @@ interface MiSleepRaw {
 
 export interface SqliteParseResult {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
-  stats: { totalSleep: number; dateRange: string };
+  stats: { totalSleep: number; filteredCount: number; dateRange: string };
 }
+
+// Nuits < 2h filtrées (sieste / capteur non porté)
+const MIN_SLEEP_MIN = 120;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -212,6 +215,7 @@ export async function parseMiFitnessDb(
   // Nuits de sommeil
   const sleepRes = db.exec('SELECT value FROM sleep WHERE deleted = 0 ORDER BY rowid');
   const sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[] = [];
+  let filteredCount = 0;
 
   if (sleepRes.length > 0) {
     const rows = sleepRes[0].values;
@@ -219,6 +223,9 @@ export async function parseMiFitnessDb(
       try {
         const raw: MiSleepRaw = JSON.parse(row[0] as string);
         if (!raw.bedtime || !raw.wake_up_time || !raw.duration) return;
+
+        // Filtrer les nuits trop courtes (sieste, capteur non porté, etc.)
+        if (raw.duration < MIN_SLEEP_MIN) { filteredCount++; return; }
 
         const deep  = raw.sleep_deep_duration  ?? 0;
         const light = raw.sleep_light_duration ?? 0;
@@ -262,8 +269,9 @@ export async function parseMiFitnessDb(
   return {
     sleepRecords,
     stats: {
-      totalSleep: sleepRecords.length,
-      dateRange:  dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : 'aucune',
+      totalSleep:    sleepRecords.length,
+      filteredCount,
+      dateRange:     dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : 'aucune',
     },
   };
 }
