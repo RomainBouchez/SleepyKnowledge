@@ -610,7 +610,7 @@ export default function ImportPage() {
                   <div
                     key={r.date}
                     onClick={() => selectionMode ? toggleCheck(r.date) : setSelected(r)}
-                    className={`bg-sl-card rounded-xl px-3 py-3 grid gap-2 items-center cursor-pointer hover:bg-sl-surface transition-colors active:scale-[0.99] ${selectionMode ? 'grid-cols-[32px_82px_1fr_1fr_44px]' : 'grid-cols-[90px_1fr_1fr_52px]'} ${selectionMode && checkedDates.has(r.date) ? 'ring-1 ring-sl-accent bg-sl-accent/5' : ''}`}
+                    className={`bg-sl-card rounded-xl px-3 py-3 grid gap-2 items-center cursor-pointer hover:bg-sl-surface transition-colors active:scale-[0.99] border border-sl-border ${selectionMode ? 'grid-cols-[32px_82px_1fr_1fr_44px]' : 'grid-cols-[90px_1fr_1fr_52px]'} ${selectionMode && checkedDates.has(r.date) ? 'ring-1 ring-sl-accent bg-sl-accent/5' : ''}`}
                   >
                     {/* Checkbox */}
                     {selectionMode && (
@@ -786,6 +786,21 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
   const [showLifestyle, setShowLifestyle] = useState(false);
   const [lifestyleLog, setLifestyleLog] = useState<LifestyleLog | null>(null);
 
+  const dragStartY = useRef<number | null>(null);
+  const [dragY, setDragY] = useState(0);
+
+  const onTouchStart = (e: React.TouchEvent) => { dragStartY.current = e.touches[0].clientY; };
+  const onTouchMove  = (e: React.TouchEvent) => {
+    if (dragStartY.current === null) return;
+    const dy = e.touches[0].clientY - dragStartY.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const onTouchEnd   = () => {
+    if (dragY > 80) onClose();
+    dragStartY.current = null;
+    setDragY(0);
+  };
+
   useEffect(() => {
     getLifestyleLogByDate(r.date).then(setLifestyleLog);
   }, [r.date]);
@@ -808,11 +823,18 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
       />
 
       {/* Sheet */}
-      <div className="fixed bottom-0 inset-x-0 z-50 bg-sl-surface rounded-t-3xl pb-8"
-        style={{ maxHeight: '90vh', overflowY: 'auto' }}
+      <div
+        className="fixed bottom-0 inset-x-0 z-50 bg-sl-surface rounded-t-3xl pb-8"
+        style={{ height: '75vh', overflowY: 'auto', transform: `translateY(${dragY}px)`, transition: dragY === 0 ? 'transform 0.3s ease' : 'none' }}
       >
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-1">
+        {/* Handle — drag zone */}
+        <div
+          className="flex justify-center items-center cursor-grab active:cursor-grabbing"
+          style={{ height: 48 }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           <div className="w-10 h-1 rounded-full bg-sl-border" />
         </div>
 
