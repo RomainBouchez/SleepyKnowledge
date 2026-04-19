@@ -67,11 +67,13 @@ function calcSleepScore(duration: number, deep: number, rem: number): number {
 
 const SQL_JS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0';
 
+type SqlJsDb = {
+  exec: (sql: string) => Array<{ values: unknown[][] }>;
+  close: () => void;
+};
+
 type SqlJsStatic = {
-  Database: new (data: Uint8Array) => {
-    exec: (sql: string) => Array<{ values: unknown[][] }>;
-    close: () => void;
-  };
+  Database: new (data: Uint8Array) => SqlJsDb;
 };
 
 declare global {
@@ -100,28 +102,81 @@ async function loadSqlJsFromCDN(): Promise<SqlJsStatic> {
   return window.initSqlJs!({ locateFile: (f: string) => `${SQL_JS_CDN}/${f}` });
 }
 
+// ── WAL merger ────────────────────────────────────────────────────────────────
+
+/**
+ * Applique les pages du fichier WAL sur le buffer principal du .db.
+ * Format WAL SQLite : header 32 octets + frames (24 octets header + pageSize octets données).
+ * Seules les frames dont le salt correspond au header WAL sont considérées valides.
+ */
+function applyWalToDb(dbBytes: Uint8Array, walBytes: Uint8Array): Uint8Array {
+  if (walBytes.length < 32) return dbBytes;
+
+  const w = new DataView(walBytes.buffer, walBytes.byteOffset);
+  const magic = w.getUint32(0, false);
+  if (magic !== 0x377f0682 && magic !== 0x377f0683) return dbBytes;
+
+  const pageSize   = w.getUint32(8, false);
+  if (pageSize < 512 || pageSize > 65536) return dbBytes;
+
+  const salt1      = w.getUint32(16, false);
+  const salt2      = w.getUint32(20, false);
+  const frameSize  = 24 + pageSize;
+  const frameCount = Math.floor((walBytes.length - 32) / frameSize);
+  if (frameCount === 0) return dbBytes;
+
+  // Dernière version de chaque page (on itère en ordre → la dernière écriture gagne)
+  const pageMap = new Map<number, Uint8Array>();
+  for (let i = 0; i < frameCount; i++) {
+    const off  = 32 + i * frameSize;
+    const fv   = new DataView(walBytes.buffer, walBytes.byteOffset + off);
+    if (fv.getUint32(8, false) !== salt1 || fv.getUint32(12, false) !== salt2) continue;
+    const pageNo = fv.getUint32(0, false);
+    if (pageNo < 1) continue;
+    pageMap.set(pageNo, walBytes.slice(off + 24, off + 24 + pageSize));
+  }
+
+  if (pageMap.size === 0) return dbBytes;
+
+  const maxPage  = Math.max(...pageMap.keys());
+  const result   = new Uint8Array(Math.max(dbBytes.length, maxPage * pageSize));
+  result.set(dbBytes);
+  for (const [pageNo, data] of pageMap) {
+    result.set(data, (pageNo - 1) * pageSize);
+  }
+  return result;
+}
+
 // ── Point d'entrée ────────────────────────────────────────────────────────────
 
 /**
  * Parse un fichier .db Mi Fitness directement (pas de ZIP).
- * Lit les tables `sleep` et `steps_day`, retourne SleepRecord[] prêts à importer.
+ * Si walFile est fourni, fusionne le WAL dans le buffer .db avant parsing
+ * pour inclure les données récentes non encore checkpointées.
  */
 export async function parseMiFitnessDb(
   file: File,
-  onProgress: (pct: number) => void
+  onProgress: (pct: number) => void,
+  walFile?: File,
+  shmFile?: File,
 ): Promise<SqliteParseResult> {
   onProgress(5);
 
-  // Lire le fichier comme ArrayBuffer
-  const buffer = await file.arrayBuffer();
+  const [buffer, walBuffer] = await Promise.all([
+    file.arrayBuffer(),
+    walFile?.arrayBuffer(),
+  ]);
   onProgress(20);
 
-  // Charger sql.js depuis CDN via <script> tag — bypass webpack bundling
   const SQL = await loadSqlJsFromCDN();
   onProgress(40);
   onProgress(55);
 
-  const db = new SQL.Database(new Uint8Array(buffer));
+  let dbData = new Uint8Array(buffer);
+  if (walBuffer) {
+    dbData = applyWalToDb(dbData, new Uint8Array(walBuffer));
+  }
+  const db = new SQL.Database(dbData);
 
   // Pas quotidiens — `time` est une colonne (UTC midnight), `steps` est dans le JSON
   const stepsByDate = new Map<string, number>();
