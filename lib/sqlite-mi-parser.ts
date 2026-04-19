@@ -256,9 +256,16 @@ export async function parseMiFitnessDb(
         const awake = raw.sleep_awake_duration ?? Math.max(0, raw.duration - deep - light - rem);
 
         // Mi Fitness date une nuit par le jour du réveil (wake_up_time), pas le coucher
-        const date    = unixToDateStr(raw.wake_up_time);
-        // Date en UTC pour faire correspondre les clés sleep_day et steps_day (stockés en UTC)
-        const dateUtc = new Date(raw.wake_up_time * 1000).toISOString().split('T')[0];
+        const date       = unixToDateStr(raw.wake_up_time);
+        // Score officiel : sleep_day keyed sur wake_up_time UTC
+        const dateUtc    = new Date(raw.wake_up_time * 1000).toISOString().split('T')[0];
+        // Pas : journée active avant le coucher
+        // Si coucher avant midi local → la journée active était le jour local précédent
+        const bedLocal   = new Date(raw.bedtime * 1000);
+        const activeDay  = bedLocal.getHours() < 12
+          ? new Date(raw.bedtime * 1000 - 86_400_000)
+          : bedLocal;
+        const bedDateUtc = `${activeDay.getFullYear()}-${String(activeDay.getMonth() + 1).padStart(2, '0')}-${String(activeDay.getDate()).padStart(2, '0')}`;
 
         sleepRecords.push({
           date,
@@ -274,7 +281,7 @@ export async function parseMiFitnessDb(
           hr_avg:            raw.avg_hr ?? 0,
           hr_min:            raw.min_hr ?? 0,
           hr_max:            raw.max_hr ?? 0,
-          steps:             stepsByDate.get(dateUtc) ?? 0,
+          steps:             stepsByDate.get(bedDateUtc) ?? 0,
           sleep_stages_json: raw.items?.length
             ? JSON.stringify(raw.items)
             : undefined,
