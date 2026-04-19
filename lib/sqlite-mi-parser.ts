@@ -120,7 +120,7 @@ async function loadSqlJsFromCDN(): Promise<SqlJsStatic> {
  * Format WAL SQLite : header 32 octets + frames (24 octets header + pageSize octets données).
  * Seules les frames dont le salt correspond au header WAL sont considérées valides.
  */
-function applyWalToDb(dbBytes: Uint8Array, walBytes: Uint8Array): Uint8Array {
+function applyWalToDb(dbBytes: Uint8Array<ArrayBuffer>, walBytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
   if (walBytes.length < 32) return dbBytes;
 
   const w = new DataView(walBytes.buffer, walBytes.byteOffset);
@@ -149,12 +149,13 @@ function applyWalToDb(dbBytes: Uint8Array, walBytes: Uint8Array): Uint8Array {
 
   if (pageMap.size === 0) return dbBytes;
 
-  const maxPage  = Math.max(...pageMap.keys());
+  let maxPage = 0;
+  for (const k of Array.from(pageMap.keys())) if (k > maxPage) maxPage = k;
   const result   = new Uint8Array(Math.max(dbBytes.length, maxPage * pageSize));
   result.set(dbBytes);
-  for (const [pageNo, data] of pageMap) {
+  pageMap.forEach((data, pageNo) => {
     result.set(data, (pageNo - 1) * pageSize);
-  }
+  });
   return result;
 }
 
@@ -183,9 +184,9 @@ export async function parseMiFitnessDb(
   onProgress(40);
   onProgress(55);
 
-  let dbData = new Uint8Array(buffer);
+  let dbData = new Uint8Array(buffer as ArrayBuffer);
   if (walBuffer) {
-    dbData = applyWalToDb(dbData, new Uint8Array(walBuffer));
+    dbData = applyWalToDb(dbData, new Uint8Array(walBuffer as ArrayBuffer));
   }
   const db = new SQL.Database(dbData);
 
