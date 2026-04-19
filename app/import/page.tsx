@@ -23,11 +23,14 @@ type Step = 'idle' | 'password' | 'parsing' | 'preview' | 'importing' | 'done' |
 interface ParsedData {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
   sportRecords: SportRecord[];
-  stats: { totalSleep: number; totalSport: number; dateRange: string };
+  naps: { date: string; duration_min: number; sleep_start: string; sleep_end: string }[];
+  stats: { totalSleep: number; totalSport: number; filteredCount: number; dateRange: string };
 }
 
 const isZipFile = (name: string): boolean => name.toLowerCase().endsWith('.zip');
-const isDbFile = (name: string): boolean => name.toLowerCase().endsWith('.db');
+const isDbFile  = (name: string): boolean => name.toLowerCase().endsWith('.db');
+const isWalFile = (name: string): boolean => name.toLowerCase().endsWith('.db-wal');
+const isShmFile = (name: string): boolean => name.toLowerCase().endsWith('.db-shm');
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,8 @@ export default function ImportPage() {
 
   const [step, setStep] = useState<Step>('idle');
   const [file, setFile] = useState<File | null>(null);
+  const [walFile, setWalFile] = useState<File | null>(null);
+  const [shmFile, setShmFile] = useState<File | null>(null);
   const [password, setPassword] = useState('');
   const [progress, setProgress] = useState(0);
   const [parsed, setParsed] = useState<ParsedData | null>(null);
@@ -105,53 +110,66 @@ export default function ImportPage() {
 
   // ── File selection ──────────────────────────────────────────────────────────
 
-  const handleFile = (f: File) => {
-    if (!isZipFile(f.name) && !isDbFile(f.name)) {
-      setError('Le fichier doit être un .zip ou un .db');
+  const handleFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    const db  = arr.find(f => isDbFile(f.name));
+    const wal = arr.find(f => isWalFile(f.name));
+    const shm = arr.find(f => isShmFile(f.name));
+    const zip = arr.find(f => isZipFile(f.name));
+
+    if (!db && !zip) {
+      setError('Le fichier doit être un .zip ou un .db (avec éventuellement .db-wal et .db-shm)');
       setStep('error');
       return;
     }
-    setFile(f);
+
     setError('');
     setPassword('');
 
-    // Les exports ZIP peuvent être chiffrés; les .db non.
-    if (isDbFile(f.name)) {
-      void handleParseFile(f, '');
+    if (db) {
+      setFile(db);
+      setWalFile(wal ?? null);
+      setShmFile(shm ?? null);
+      void handleParseFile(db, '', wal ?? undefined, shm ?? undefined);
       return;
     }
+
+    // ZIP
+    setFile(zip!);
+    setWalFile(null);
+    setShmFile(null);
     setStep('password');
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) handleFile(f);
+    if (e.target.files?.length) handleFiles(e.target.files);
   };
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
   }, []);
 
   // ── Unzip + parse ──────────────────────────────────────────────────────────
 
-  const handleParseFile = async (selectedFile: File, zipPassword: string) => {
+  const handleParseFile = async (selectedFile: File, zipPassword: string, wal?: File, shm?: File) => {
     setStep('parsing');
     setProgress(0);
     setError('');
 
     try {
       if (isDbFile(selectedFile.name)) {
-        const result = await parseMiFitnessDb(selectedFile, setProgress);
+        const result = await parseMiFitnessDb(selectedFile, setProgress, wal, shm);
         const parsedData: ParsedData = {
           sleepRecords: result.sleepRecords,
           sportRecords: [],
+          naps:         result.naps,
           stats: {
-            totalSleep: result.stats.totalSleep,
-            totalSport: 0,
-            dateRange: result.stats.dateRange,
+            totalSleep:    result.stats.totalSleep,
+            totalSport:    0,
+            filteredCount: result.stats.filteredCount,
+            dateRange:     result.stats.dateRange,
           },
         };
 
@@ -220,7 +238,7 @@ export default function ImportPage() {
       setOverlapDates(existing);
       setOverwriteChecked(false);
 
-      setParsed(result);
+      setParsed({ ...result, naps: [], stats: { ...result.stats, filteredCount: 0 } });
       setStep('preview');
 
     } catch (err: unknown) {
@@ -240,7 +258,7 @@ export default function ImportPage() {
 
   const handleParse = async () => {
     if (!file) return;
-    await handleParseFile(file, password);
+    await handleParseFile(file, password, walFile ?? undefined, shmFile ?? undefined);
   };
 
   // ── Import into IndexedDB ──────────────────────────────────────────────────
@@ -263,9 +281,12 @@ export default function ImportPage() {
       })
     );
 
+    const overlapSet = new Set(overlapDates);
+
     for (const record of parsed.sleepRecords) {
-      // Skip records with zero sleep score and zero duration (no data)
       if (record.sleep_score === 0 && record.duration_min === 0) continue;
+      // Skip existing dates unless user confirmed overwrite
+      if (overlapSet.has(record.date) && !overwriteChecked) continue;
       const existing = existingByDate.get(record.date);
       const steps = existing ? Math.max(existing.steps, record.steps) : record.steps;
       await upsertSleepRecord({ ...record, steps, imported_at: now });
@@ -310,11 +331,12 @@ export default function ImportPage() {
             >
               <FolderOpen size={40} strokeWidth={1.5} className="mb-3" style={{ color: '#ff6b35' }} />
               <p className="text-white font-medium mb-1">Dépose ton fichier Mi Fitness ici</p>
-              <p className="text-sl-muted text-sm">ZIP ou DB, ou clique pour sélectionner</p>
+              <p className="text-sl-muted text-sm">ZIP, ou les 3 fichiers .db + .db-wal + .db-shm ensemble</p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".zip,.db,application/zip,application/x-zip-compressed,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
+                multiple
+                accept=".zip,.db,.db-wal,.db-shm,application/zip,application/x-zip-compressed,application/x-sqlite3,application/vnd.sqlite3,application/octet-stream"
                 onChange={onFileChange}
                 className="hidden"
               />
@@ -360,7 +382,7 @@ export default function ImportPage() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => { setStep('idle'); setFile(null); setPassword(''); }}
+                onClick={() => { setStep('idle'); setFile(null); setWalFile(null); setShmFile(null); setPassword(''); }}
                 className="flex-1 py-3 rounded-xl border border-sl-border text-sl-muted hover:text-white transition-colors"
               >
                 Annuler
@@ -401,10 +423,28 @@ export default function ImportPage() {
                 <p className="text-white text-sm font-medium">{parsed.stats.dateRange}</p>
               </div>
 
+              {parsed.naps.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sl-muted text-xs uppercase tracking-wider">
+                    {parsed.naps.length} sieste{parsed.naps.length > 1 ? 's' : ''} détectée{parsed.naps.length > 1 ? 's' : ''} — non importée{parsed.naps.length > 1 ? 's' : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {parsed.naps.map((n, i) => (
+                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sl-bg border border-sl-border">
+                        <span className="text-sl-muted text-xs">{n.date}</span>
+                        <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>{n.sleep_start}→{n.sleep_end}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#ffb040' }}>{n.duration_min}m</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040', letterSpacing: '0.05em' }}>sieste</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {parsed.sleepRecords.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-sl-muted text-xs uppercase tracking-wider">Aperçu (3 premières nuits)</p>
-                  {parsed.sleepRecords.slice(0, 3).map(r => (
+                  <p className="text-sl-muted text-xs uppercase tracking-wider">Aperçu (3 dernières nuits)</p>
+                  {parsed.sleepRecords.slice(-3).reverse().map(r => (
                     <div key={r.date} className="flex items-center justify-between bg-sl-bg rounded-xl px-4 py-3">
                       <span className="text-sl-muted text-sm">{r.date}</span>
                       <span className="text-white text-sm">{r.sleep_start} → {r.sleep_end}</span>
@@ -444,17 +484,18 @@ export default function ImportPage() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => { setStep('idle'); setFile(null); setParsed(null); setPassword(''); }}
+                onClick={() => { setStep('idle'); setFile(null); setWalFile(null); setShmFile(null); setParsed(null); setPassword(''); }}
                 className="flex-1 py-3 rounded-xl border border-sl-border text-sl-muted hover:text-white transition-colors"
               >
                 Annuler
               </button>
               <button
                 onClick={handleImport}
-                disabled={overlapDates.length > 0 && !overwriteChecked}
-                className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-1 py-3 rounded-xl bg-sl-accent text-white font-semibold hover:bg-sl-accent/80 transition-colors"
               >
-                Importer {parsed.stats.totalSleep} nuits
+                {overlapDates.length > 0 && !overwriteChecked
+                  ? `Importer ${parsed.stats.totalSleep - overlapDates.length} nouvelles nuits`
+                  : `Importer ${parsed.stats.totalSleep} nuits`}
               </button>
             </div>
           </div>
@@ -487,7 +528,7 @@ export default function ImportPage() {
               Voir le dashboard →
             </button>
             <button
-              onClick={() => { setStep('idle'); setFile(null); setParsed(null); setPassword(''); setImportedCount(0); }}
+              onClick={() => { setStep('idle'); setFile(null); setWalFile(null); setShmFile(null); setParsed(null); setPassword(''); setImportedCount(0); }}
               className="w-full py-3 rounded-xl border border-sl-border text-sl-muted hover:text-white transition-colors"
             >
               Importer un autre fichier

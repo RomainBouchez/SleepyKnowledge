@@ -59,6 +59,7 @@ export default function ChatPage() {
   const [streaming,    setStreaming]    = useState(false);
   const [context,      setContext]      = useState('');
   const [contextReady, setContextReady] = useState(false);
+  const [nightCount,   setNightCount]   = useState(0);
   const [stats,        setStats]        = useState<SleepStats | null>(null);
   const [heroExpanded, setHeroExpanded] = useState(false);
   const bottomRef   = useRef<HTMLDivElement>(null);
@@ -66,8 +67,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     (async () => {
-      const [sr, ll] = await Promise.all([getSleepRecords(30), getLifestyleLogs(30)]);
+      const [sr, ll] = await Promise.all([getSleepRecords(365), getLifestyleLogs(365)]);
       setContext(buildSleepContext(sr, ll));
+      setNightCount(sr.length);
       setContextReady(true);
       setStats(computeStats(sr));
     })();
@@ -148,7 +150,7 @@ export default function ChatPage() {
               Sleepy · Coach
             </div>
             <div style={{ fontSize: 12.5, color: 'rgba(240,235,230,0.65)', marginTop: 1 }}>
-              {contextReady ? '30 nuits analysées · prêt' : 'Chargement du contexte…'}
+              {contextReady ? `${nightCount} nuits analysées · prêt` : 'Chargement du contexte…'}
             </div>
           </div>
           <div style={{
@@ -183,7 +185,7 @@ export default function ChatPage() {
                 <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.16em', color: '#ff6b35', textTransform: 'uppercase' }}>En direct</span>
               </div>
               <span style={{ fontSize: 10, color: 'rgba(240,235,230,0.45)', fontFamily: 'ui-monospace, Menlo, monospace' }}>
-                Sonnet 4.6 · 30 j
+                Sonnet 4.6 · {nightCount} j
               </span>
             </div>
 

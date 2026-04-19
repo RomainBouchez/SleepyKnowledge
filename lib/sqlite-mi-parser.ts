@@ -21,10 +21,21 @@ interface MiSleepRaw {
   items?: Array<{ start_time: number; end_time: number; state: number }>;
 }
 
+export interface NapRecord {
+  date: string;
+  duration_min: number;
+  sleep_start: string;
+  sleep_end: string;
+}
+
 export interface SqliteParseResult {
   sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[];
-  stats: { totalSleep: number; dateRange: string };
+  naps: NapRecord[];
+  stats: { totalSleep: number; filteredCount: number; dateRange: string };
 }
+
+// Nuits < 2h filtrées (sieste / capteur non porté)
+const MIN_SLEEP_MIN = 120;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,11 +78,13 @@ function calcSleepScore(duration: number, deep: number, rem: number): number {
 
 const SQL_JS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0';
 
+type SqlJsDb = {
+  exec: (sql: string) => Array<{ values: unknown[][] }>;
+  close: () => void;
+};
+
 type SqlJsStatic = {
-  Database: new (data: Uint8Array) => {
-    exec: (sql: string) => Array<{ values: unknown[][] }>;
-    close: () => void;
-  };
+  Database: new (data: Uint8Array) => SqlJsDb;
 };
 
 declare global {
@@ -100,28 +113,82 @@ async function loadSqlJsFromCDN(): Promise<SqlJsStatic> {
   return window.initSqlJs!({ locateFile: (f: string) => `${SQL_JS_CDN}/${f}` });
 }
 
+// ── WAL merger ────────────────────────────────────────────────────────────────
+
+/**
+ * Applique les pages du fichier WAL sur le buffer principal du .db.
+ * Format WAL SQLite : header 32 octets + frames (24 octets header + pageSize octets données).
+ * Seules les frames dont le salt correspond au header WAL sont considérées valides.
+ */
+function applyWalToDb(dbBytes: Uint8Array<ArrayBuffer>, walBytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
+  if (walBytes.length < 32) return dbBytes;
+
+  const w = new DataView(walBytes.buffer, walBytes.byteOffset);
+  const magic = w.getUint32(0, false);
+  if (magic !== 0x377f0682 && magic !== 0x377f0683) return dbBytes;
+
+  const pageSize   = w.getUint32(8, false);
+  if (pageSize < 512 || pageSize > 65536) return dbBytes;
+
+  const salt1      = w.getUint32(16, false);
+  const salt2      = w.getUint32(20, false);
+  const frameSize  = 24 + pageSize;
+  const frameCount = Math.floor((walBytes.length - 32) / frameSize);
+  if (frameCount === 0) return dbBytes;
+
+  // Dernière version de chaque page (on itère en ordre → la dernière écriture gagne)
+  const pageMap = new Map<number, Uint8Array>();
+  for (let i = 0; i < frameCount; i++) {
+    const off  = 32 + i * frameSize;
+    const fv   = new DataView(walBytes.buffer, walBytes.byteOffset + off);
+    if (fv.getUint32(8, false) !== salt1 || fv.getUint32(12, false) !== salt2) continue;
+    const pageNo = fv.getUint32(0, false);
+    if (pageNo < 1) continue;
+    pageMap.set(pageNo, walBytes.slice(off + 24, off + 24 + pageSize));
+  }
+
+  if (pageMap.size === 0) return dbBytes;
+
+  let maxPage = 0;
+  for (const k of Array.from(pageMap.keys())) if (k > maxPage) maxPage = k;
+  const result   = new Uint8Array(Math.max(dbBytes.length, maxPage * pageSize));
+  result.set(dbBytes);
+  pageMap.forEach((data, pageNo) => {
+    result.set(data, (pageNo - 1) * pageSize);
+  });
+  return result;
+}
+
 // ── Point d'entrée ────────────────────────────────────────────────────────────
 
 /**
  * Parse un fichier .db Mi Fitness directement (pas de ZIP).
- * Lit les tables `sleep` et `steps_day`, retourne SleepRecord[] prêts à importer.
+ * Si walFile est fourni, fusionne le WAL dans le buffer .db avant parsing
+ * pour inclure les données récentes non encore checkpointées.
  */
 export async function parseMiFitnessDb(
   file: File,
-  onProgress: (pct: number) => void
+  onProgress: (pct: number) => void,
+  walFile?: File,
+  shmFile?: File,
 ): Promise<SqliteParseResult> {
   onProgress(5);
 
-  // Lire le fichier comme ArrayBuffer
-  const buffer = await file.arrayBuffer();
+  const [buffer, walBuffer] = await Promise.all([
+    file.arrayBuffer(),
+    walFile?.arrayBuffer(),
+  ]);
   onProgress(20);
 
-  // Charger sql.js depuis CDN via <script> tag — bypass webpack bundling
   const SQL = await loadSqlJsFromCDN();
   onProgress(40);
   onProgress(55);
 
-  const db = new SQL.Database(new Uint8Array(buffer));
+  let dbData = new Uint8Array(buffer as ArrayBuffer);
+  if (walBuffer) {
+    dbData = applyWalToDb(dbData, new Uint8Array(walBuffer as ArrayBuffer));
+  }
+  const db = new SQL.Database(dbData);
 
   // Pas quotidiens — `time` est une colonne (UTC midnight), `steps` est dans le JSON
   const stepsByDate = new Map<string, number>();
@@ -157,6 +224,8 @@ export async function parseMiFitnessDb(
   // Nuits de sommeil
   const sleepRes = db.exec('SELECT value FROM sleep WHERE deleted = 0 ORDER BY rowid');
   const sleepRecords: Omit<SleepRecord, 'id' | 'imported_at'>[] = [];
+  const naps: NapRecord[] = [];
+  let filteredCount = 0;
 
   if (sleepRes.length > 0) {
     const rows = sleepRes[0].values;
@@ -164,6 +233,21 @@ export async function parseMiFitnessDb(
       try {
         const raw: MiSleepRaw = JSON.parse(row[0] as string);
         if (!raw.bedtime || !raw.wake_up_time || !raw.duration) return;
+
+        // Nuits trop courtes → sieste si coucher entre 12h et 21h, sinon fragment silencieux
+        if (raw.duration < MIN_SLEEP_MIN) {
+          filteredCount++;
+          const bedHour = new Date(raw.bedtime * 1000).getHours();
+          if (bedHour >= 12 && bedHour < 21) {
+            naps.push({
+              date:         unixToDateStr(raw.wake_up_time),
+              duration_min: raw.duration,
+              sleep_start:  unixToTimeStr(raw.bedtime),
+              sleep_end:    unixToTimeStr(raw.wake_up_time),
+            });
+          }
+          return;
+        }
 
         const deep  = raw.sleep_deep_duration  ?? 0;
         const light = raw.sleep_light_duration ?? 0;
@@ -203,12 +287,24 @@ export async function parseMiFitnessDb(
   db.close();
   onProgress(100);
 
-  const dates = sleepRecords.map(r => r.date).sort();
+  // Dédoublonner par date : même date = sieste + vraie nuit → garder la plus longue
+  const byDate = new Map<string, Omit<SleepRecord, 'id' | 'imported_at'>>();
+  for (const r of sleepRecords) {
+    const existing = byDate.get(r.date);
+    if (!existing || r.duration_min > existing.duration_min) {
+      byDate.set(r.date, r);
+    }
+  }
+  const deduped = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  const dates = deduped.map(r => r.date);
   return {
-    sleepRecords,
+    sleepRecords: deduped,
+    naps,
     stats: {
-      totalSleep: sleepRecords.length,
-      dateRange:  dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : 'aucune',
+      totalSleep:    deduped.length,
+      filteredCount,
+      dateRange:     dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : 'aucune',
     },
   };
 }
