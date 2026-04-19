@@ -12,8 +12,8 @@ import Navigation from '@/components/Navigation';
 import ManualNightForm from '@/components/ManualNightForm';
 import { parseMiFitnessZip, type SportRecord } from '@/lib/mifitness-parser';
 import { parseMiFitnessDb } from '@/lib/sqlite-mi-parser';
-import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate, getLifestyleLogByDate, upsertLifestyleLog } from '@/lib/db';
-import type { SleepRecord, LifestyleLog } from '@/lib/types';
+import { upsertSleepRecord, getSleepRecords, deleteSleepRecordsByDates, getExistingDates, getSleepRecordByDate, getLifestyleLogByDate, upsertLifestyleLog, upsertNapsForDate, getNapsByDate, getAllNapDates } from '@/lib/db';
+import type { SleepRecord, LifestyleLog, NapRecord } from '@/lib/types';
 import LifestyleForm from '@/components/LifestyleForm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,6 +26,9 @@ interface ParsedData {
   naps: { date: string; duration_min: number; sleep_start: string; sleep_end: string }[];
   stats: { totalSleep: number; totalSport: number; filteredCount: number; dateRange: string };
 }
+
+const fmtMin = (m: number): string =>
+  m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
 
 const isZipFile = (name: string): boolean => name.toLowerCase().endsWith('.zip');
 const isDbFile  = (name: string): boolean => name.toLowerCase().endsWith('.db');
@@ -58,6 +61,7 @@ export default function ImportPage() {
   const [dbLimit, setDbLimit] = useState(30);
   const [selected, setSelected] = useState<SleepRecord | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [napDates, setNapDates] = useState<Set<string>>(new Set());
 
   // Selection & deletion
   const [selectionMode, setSelectionMode] = useState(false);
@@ -71,8 +75,9 @@ export default function ImportPage() {
 
   const loadDbRecords = async (limit = 30) => {
     setDbLoading(true);
-    const records = await getSleepRecords(limit);
+    const [records, nd] = await Promise.all([getSleepRecords(limit), getAllNapDates()]);
     setDbRecords(records.slice().reverse()); // newest first
+    setNapDates(nd);
     setDbLoading(false);
   };
 
@@ -294,6 +299,17 @@ export default function ImportPage() {
       setProgress(Math.round((count / total) * 100));
     }
 
+    // Stocker les siestes groupées par date
+    const napsByDate = new Map<string, typeof parsed.naps>();
+    for (const nap of parsed.naps) {
+      const list = napsByDate.get(nap.date) ?? [];
+      list.push(nap);
+      napsByDate.set(nap.date, list);
+    }
+    await Promise.all(
+      Array.from(napsByDate.entries()).map(([date, naps]) => upsertNapsForDate(date, naps))
+    );
+
     setImportedCount(count);
     setStep('done');
     loadDbRecords(dbLimit);
@@ -433,7 +449,7 @@ export default function ImportPage() {
                       <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sl-bg border border-sl-border">
                         <span className="text-sl-muted text-xs">{n.date}</span>
                         <span className="text-xs font-medium" style={{ color: '#94a3b8' }}>{n.sleep_start}→{n.sleep_end}</span>
-                        <span className="text-xs font-semibold" style={{ color: '#ffb040' }}>{n.duration_min}m</span>
+                        <span className="text-xs font-semibold" style={{ color: '#ffb040' }}>{fmtMin(n.duration_min)}</span>
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040', letterSpacing: '0.05em' }}>sieste</span>
                       </div>
                     ))}
@@ -621,13 +637,18 @@ export default function ImportPage() {
                       </div>
                     )}
                     {/* Date */}
-                    <span className="text-white text-xs font-medium">{r.date}</span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-white text-xs font-medium">{r.date}</span>
+                      {napDates.has(r.date) && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded self-start" style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040' }}>sieste</span>
+                      )}
+                    </div>
 
                     {/* Horaires */}
                     <span className="text-sl-muted text-xs">
                       {r.sleep_start} → {r.sleep_end}
                       <br />
-                      <span className="text-white">{Math.floor(r.duration_min / 60)}h{String(r.duration_min % 60).padStart(2, '0')}</span>
+                      <span className="text-white">{fmtMin(r.duration_min)}</span>
                     </span>
 
                     {/* Phases */}
@@ -635,12 +656,12 @@ export default function ImportPage() {
                       <div className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#1e3a8a' }} />
                         <span className="text-sl-muted">Prof</span>
-                        <span className="text-white ml-auto">{r.deep_sleep_min}m</span>
+                        <span className="text-white ml-auto">{fmtMin(r.deep_sleep_min)}</span>
                       </div>
                       <div className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#7c3aed' }} />
                         <span className="text-sl-muted">REM</span>
-                        <span className="text-white ml-auto">{r.rem_sleep_min}m</span>
+                        <span className="text-white ml-auto">{fmtMin(r.rem_sleep_min)}</span>
                       </div>
                       <div className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
@@ -785,6 +806,11 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
 
   const [showLifestyle, setShowLifestyle] = useState(false);
   const [lifestyleLog, setLifestyleLog] = useState<LifestyleLog | null>(null);
+  const [naps, setNaps] = useState<NapRecord[]>([]);
+
+  useEffect(() => {
+    getNapsByDate(r.date).then(setNaps);
+  }, [r.date]);
 
   const dragStartY = useRef<number | null>(null);
   const [dragY, setDragY] = useState(0);
@@ -901,11 +927,31 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
                 <div key={p.name} className="flex items-center gap-2 text-xs">
                   <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
                   <span className="text-sl-muted">{p.name}</span>
-                  <span className="text-white ml-auto font-medium">{p.minutes} min</span>
+                  <span className="text-white ml-auto font-medium">{fmtMin(p.minutes)}</span>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* ── Siestes ── */}
+          {naps.length > 0 && (
+            <div className="bg-sl-card rounded-2xl p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-sl-muted text-xs uppercase tracking-wider">Sieste{naps.length > 1 ? 's' : ''} ce jour</p>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(255,176,64,0.15)', color: '#ffb040' }}>
+                  {naps.length} sieste{naps.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {naps.map((n, i) => (
+                  <div key={i} className="flex items-center justify-between bg-sl-bg rounded-xl px-3 py-2.5">
+                    <span className="text-sl-muted text-sm">{n.sleep_start} → {n.sleep_end}</span>
+                    <span className="font-semibold text-sm" style={{ color: '#ffb040' }}>{fmtMin(n.duration_min)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Fréquence cardiaque ── */}
           <div className="bg-sl-card rounded-2xl p-4 mb-4">
@@ -948,7 +994,7 @@ function SleepDetailDrawer({ record: r, onClose }: { record: SleepRecord; onClos
           {/* ── Autres métriques ── */}
           <div className="grid grid-cols-2 gap-3">
           <MetricTile icon={<Footprints size={20} strokeWidth={1.8} />} label="Pas" value={r.steps.toLocaleString('fr-FR')} />
-          <MetricTile icon={<Clock size={20} strokeWidth={1.8} />} label="Éveillé" value={`${r.awake_min} min`} />
+          <MetricTile icon={<Clock size={20} strokeWidth={1.8} />} label="Éveillé" value={fmtMin(r.awake_min)} />
           <MetricTile icon={<Waves size={20} strokeWidth={1.8} />} label="Sommeil profond" value={`${Math.round((r.deep_sleep_min / totalPhases) * 100)}%`} />
           <MetricTile icon={<Brain size={20} strokeWidth={1.8} />} label="REM" value={`${Math.round((r.rem_sleep_min / totalPhases) * 100)}%`} />
           </div>

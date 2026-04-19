@@ -24,6 +24,15 @@ export interface SleepRecord {
   sleep_stages_json?: string; // JSON-encoded SleepStageItem[]
 }
 
+// ── Nap records (siestes détectées à l'import) ───────────────────────────────
+export interface NapRecord {
+  id?: number;
+  date: string;         // YYYY-MM-DD — même date que la nuit associée
+  sleep_start: string;  // HH:MM
+  sleep_end: string;    // HH:MM
+  duration_min: number;
+}
+
 // ── Lifestyle factors (manual entry each evening) ─────────────────────────────
 export type MealHeaviness = 'léger' | 'normal' | 'lourd';
 

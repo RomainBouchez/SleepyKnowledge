@@ -4,7 +4,7 @@
  * On startup call syncFromCloud() to pull remote data into local cache.
  */
 import Dexie, { type Table } from 'dexie';
-import type { SleepRecord, LifestyleLog, AiInsight } from './types';
+import type { SleepRecord, LifestyleLog, AiInsight, NapRecord } from './types';
 import { getDeviceId } from './device';
 import {
   pushSleepRecords,
@@ -22,6 +22,7 @@ class SleepIQDb extends Dexie {
   sleepRecords!: Table<SleepRecord, number>;
   lifestyleLogs!: Table<LifestyleLog, number>;
   aiInsights!: Table<AiInsight, number>;
+  napRecords!: Table<NapRecord, number>;
 
   constructor() {
     super('sleepiq');
@@ -29,6 +30,12 @@ class SleepIQDb extends Dexie {
       sleepRecords: '++id, &date',
       lifestyleLogs: '++id, &date',
       aiInsights: '++id, [date+type]',
+    });
+    this.version(2).stores({
+      sleepRecords: '++id, &date',
+      lifestyleLogs: '++id, &date',
+      aiInsights: '++id, [date+type]',
+      napRecords: '++id, date',
     });
   }
 }
@@ -82,6 +89,22 @@ export async function deleteSleepRecordsByDates(dates: string[]): Promise<void> 
   if (!dates.length) return;
   await getDb().sleepRecords.where('date').anyOf(dates).delete();
   deleteSleepRecordsFromCloud(getDeviceId(), dates);
+}
+
+// ── Nap records ───────────────────────────────────────────────────────────────
+
+export async function upsertNapsForDate(date: string, naps: Omit<NapRecord, 'id'>[]): Promise<void> {
+  await getDb().napRecords.where('date').equals(date).delete();
+  if (naps.length) await getDb().napRecords.bulkAdd(naps as NapRecord[]);
+}
+
+export async function getNapsByDate(date: string): Promise<NapRecord[]> {
+  return getDb().napRecords.where('date').equals(date).toArray();
+}
+
+export async function getAllNapDates(): Promise<Set<string>> {
+  const dates = await getDb().napRecords.orderBy('date').keys();
+  return new Set(dates as string[]);
 }
 
 // ── Lifestyle logs ────────────────────────────────────────────────────────────
